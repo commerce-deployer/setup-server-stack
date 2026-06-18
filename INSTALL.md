@@ -13,7 +13,7 @@ One Linux VPS runs Docker containers for:
 | Purpose | Service |
 |---------|---------|
 | HTTPS and subdomains | **Traefik** |
-| Docker image storage | **Registry** + **docker_auth** (`docker login`) |
+| Docker image storage | **Registry** + **Registry auth** (`docker login`) |
 | Docker UI | **Portainer** |
 | Scheduled image updates | **Watchtower** |
 | CI / tasks | **Semaphore** |
@@ -202,7 +202,7 @@ Replace `example.com` with your **`DOMAIN`**:
 **Filebrowser:** by default only `$STACK_ROOT/filebrowser/files` is exposed (not the whole server). Setting `FILEBROWSER_ROOT_PATH=/` mounts the entire host — avoid on production. See [SECURITY.md](SECURITY.md#web-panels-https-edge).
 | Deployer | `https://deployer.example.com` | `DEPLOYER_ADMIN_USER` / `DEPLOYER_ADMIN_PASSWORD` |
 
-`auth.example.com` is **docker_auth** (Docker token protocol, not a human panel).
+`registry-auth.example.com` is **Registry auth** (Docker token protocol, powered by `docker_auth`; not a human panel).
 
 **Security:** only **Traefik** and **Doku** use Traefik Basic Auth. Other panels in the table rely on app login or first-visit setup — see [SECURITY.md](SECURITY.md#web-panels-https-edge).
 
@@ -369,7 +369,7 @@ Contributor check (no VPS): `bash tests/run-ci.sh` — uses `tests/fixtures/*.en
 | `.env` / `.env.stack` | Settings; `.env.stack` built by script (chmod 600) |
 | `.setup-server-stack-secrets` | Auto-generated passwords (not in git) |
 | `${STACK_ROOT}/traefik/acme.json` | Let's Encrypt certificates |
-| `${STACK_ROOT}/certs/registry-token*.pem` | JWT signing for registry + docker_auth |
+| `${STACK_ROOT}/certs/registry-token*.pem` | JWT signing for Registry + Registry auth |
 | `${STACK_ROOT}/config/traefik/htpasswd*` | Basic Auth for Traefik / Doku |
 | `${STACK_ROOT}/config/pgadmin/` | pgAdmin auto-connect (if enabled) |
 

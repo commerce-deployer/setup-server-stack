@@ -29,7 +29,7 @@ Panels are published as `https://<service>.${DOMAIN}`. **Traefik Basic Auth** (e
 All other HTTPS panels rely on **application login only** (or a first-visit setup wizard):
 
 | Application login | Portainer, Semaphore, Duplicati, Uptime Kuma, Filebrowser, Deployer (if enabled), mongo-express, pgAdmin, Adminer |
-| Not a browser UI | Registry (`docker login`), docker_auth (`auth.${DOMAIN}`) |
+| Not a browser UI | Registry (`docker login`), Registry auth (`registry-auth.${DOMAIN}`) |
 
 **What this means**
 

@@ -969,8 +969,8 @@ push_registry_seed_images() {
   local registry_host="registry.${DOMAIN}"
   local retries="${REGISTRY_OPERATION_RETRIES:-3}"
   step "Registry: pushing seed images"
-  retry_cmd "$retries" docker compose --env-file "$ENV_FILE" -f "$SCRIPT_DIR/docker-compose.yml" --profile traefik --profile registry --profile docker-auth up -d traefik registry docker-auth \
-    || die "Failed to start traefik/registry/docker-auth."
+  retry_cmd "$retries" docker compose --env-file "$ENV_FILE" -f "$SCRIPT_DIR/docker-compose.yml" --profile traefik --profile registry --profile registry-auth up -d traefik registry registry-auth \
+    || die "Failed to start traefik/registry/registry-auth."
   docker_login_with_retry "$registry_host" "$REGISTRY_USER" "$REGISTRY_PASSWORD" "$retries" \
     || die "docker login failed for ${registry_host}."
 
@@ -1185,7 +1185,7 @@ compose_profiles() {
   [[ "${ENABLE_UPTIME_KUMA:-1}" == "1" ]] && p="${p},kuma"
   [[ "${ENABLE_FILEBROWSER:-1}" == "1" ]] && p="${p},filebrowser"
   [[ "${ENABLE_REGISTRY:-1}" == "1" ]] && p="${p},registry"
-  [[ "${ENABLE_DOCKER_AUTH:-${ENABLE_REGISTRY:-1}}" == "1" ]] && p="${p},docker-auth"
+  [[ "${ENABLE_DOCKER_AUTH:-${ENABLE_REGISTRY:-1}}" == "1" ]] && p="${p},registry-auth"
   [[ "${ENABLE_DEPLOYER:-0}" == "1" ]] && p="${p},deployer"
   [[ "${ENABLE_MONGO:-0}" == "1" ]] && p="${p},mongo"
   [[ "${ENABLE_POSTGRES:-0}" == "1" ]] && p="${p},postgres"
@@ -1369,8 +1369,8 @@ print_urls() {
   echo "=== HTTPS URLs (after Let's Encrypt certificates are issued) ==="
   [[ "${ENABLE_TRAEFIK:-1}" == "1" ]] && echo "  Traefik:     https://traefik.${d}"
   if registry_enabled; then
-    echo "  Registry:    https://registry.${d}"
-    echo "  docker_auth: https://auth.${d}"
+    echo "  Registry:      https://registry.${d}"
+    echo "  Registry auth: https://registry-auth.${d}"
   fi
   [[ "${ENABLE_PORTAINER:-1}" == "1" ]] && echo "  Portainer:   https://portainer.${d}"
   [[ "${ENABLE_SEMAPHORE:-1}" == "1" ]] && echo "  Semaphore:   https://semaphore.${d}"

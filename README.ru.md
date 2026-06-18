@@ -15,7 +15,7 @@
 | Категория | Сервисы |
 |-----------|---------|
 | Сеть и TLS | Traefik 3.6, Let's Encrypt |
-| Образы | Private Docker Registry + `docker_auth` (token flow) |
+| Образы | Private Docker Registry + Registry auth (`docker_auth` token flow) |
 | Операции | Portainer, Watchtower, Semaphore, Doku, Duplicati, Uptime Kuma, Filebrowser |
 | Деплой приложений | Deployer (опционально, `ENABLE_DEPLOYER=1` + `DEPLOYER_IMAGE`) |
 | Базы данных | MongoDB, PostgreSQL, MariaDB, MySQL (опционально) |

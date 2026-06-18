@@ -13,7 +13,7 @@
 | Зачем | Сервис |
 |-------|--------|
 | HTTPS и маршруты к поддоменам | **Traefik** |
-| Хранение Docker-образов | **Registry** + **docker_auth** (логин `docker login`) |
+| Хранение Docker-образов | **Registry** + **Registry auth** (логин `docker login`) |
 | Управление Docker с браузера | **Portainer** |
 | Обновление образов по расписанию | **Watchtower** |
 | CI/задачи | **Semaphore** |
@@ -153,7 +153,7 @@ sudo bash ./setup-server-stack.sh
 - создаст каталоги под `traefik/acme.json`, ключи registry, конфиги;
 - сгенерирует **случайные пароли** там, где в `.env` они пустые, и запишет их в **`.setup-server-stack-secrets`**;
 - подготовит **Traefik** basic-auth: `config/traefik/htpasswd` (dashboard) и `config/traefik/htpasswd-doku` (**Doku**); пароли в `.setup-server-stack-secrets` — `TRAEFIK_DASHBOARD_PASSWORD` и `DOKU_DASHBOARD_PASSWORD` (в `.env` их не дублируйте);
-- сгенерирует **ключи JWT** для registry / `docker_auth`;
+- сгенерирует **ключи JWT** для Registry / Registry auth;
 - соберёт **`auth_config.yml`** из шаблона;
 - соберёт **`config/docker/config.json`** для Watchtower (чтобы тянуть образы с вашего registry);
 - сгенерирует **`$STACK_ROOT/.env.stack`** (один файл для `docker compose --env-file`, chmod 600);
@@ -241,7 +241,7 @@ docker compose -f docker-compose.yml --env-file .env.stack ps
 **Filebrowser:** по умолчанию открыт только каталог `$STACK_ROOT/filebrowser/files`, не весь сервер. `FILEBROWSER_ROOT_PATH=/` монтирует весь хост (rw) — на проде не используйте. См. [SECURITY.ru.md](SECURITY.ru.md#веб-панели-край-https).
 | Deployer (если включён) | `https://deployer.company.ru` | Логин/пароль из `DEPLOYER_ADMIN_USER` / `DEPLOYER_ADMIN_PASSWORD` |
 
-Поддомен **`auth.company.ru`** — сервис **docker_auth** (для протокола Docker, не «панель для людей» в том же смысле).
+Поддомен **`registry-auth.company.ru`** — сервис **Registry auth** (технический endpoint протокола Docker, работает на `docker_auth`; не «панель для людей»).
 
 **Безопасность:** Traefik Basic Auth есть только у **Traefik** и **Doku**. Остальные панели в таблице — логин приложения или «первый заход»; подробнее [SECURITY.ru.md](SECURITY.ru.md#веб-панели-край-https).
 
@@ -432,7 +432,7 @@ bash tests/run-ci.sh
 | `.env` / `.env.stack` | Настройки; `.env.stack` собирается скриптом (chmod 600) |
 | `.setup-server-stack-secrets` | Автогенерируемые пароли (не в git) |
 | `${STACK_ROOT}/traefik/acme.json` | Сертификаты Let's Encrypt |
-| `${STACK_ROOT}/certs/registry-token*.pem` | JWT для registry + `docker_auth` |
+| `${STACK_ROOT}/certs/registry-token*.pem` | JWT для Registry + Registry auth |
 | `${STACK_ROOT}/config/traefik/htpasswd*` | Basic Auth Traefik / Doku |
 | `${STACK_ROOT}/config/pgadmin/` | Автоподключение pgAdmin (если включён) |
 

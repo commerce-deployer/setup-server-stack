@@ -29,7 +29,7 @@
 Остальные HTTPS-панели защищены **только логином приложения** (или мастером «первого захода»):
 
 | Логин в приложении | Portainer, Semaphore, Duplicati, Uptime Kuma, Filebrowser, Deployer (если включён), mongo-express, pgAdmin, Adminer |
-| Не браузерная панель | Registry (`docker login`), docker_auth (`auth.${DOMAIN}`) |
+| Не браузерная панель | Registry (`docker login`), Registry auth (`registry-auth.${DOMAIN}`) |
 
 **Практика**
 

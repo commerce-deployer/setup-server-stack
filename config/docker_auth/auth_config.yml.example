@@ -1,9 +1,9 @@
-# docker_auth (cesanta/docker_auth) — copied to auth_config.yml with substituted secrets
+# Registry auth (cesanta/docker_auth) — copied to auth_config.yml with substituted secrets
 # (setup-server-stack.sh renders from this template using .env / .setup-server-stack-secrets).
 #
 # Must match registry (see INSTALL.md — registry troubleshooting):
 #   REGISTRY_AUTH_TOKEN_ISSUER     == token.issuer (below)
-#   REGISTRY_AUTH_TOKEN_REALM      == public HTTPS realm URL, usually https://auth.${DOMAIN}/auth
+#   REGISTRY_AUTH_TOKEN_REALM      == public HTTPS realm URL, usually https://registry-auth.${DOMAIN}/auth
 #   REGISTRY_AUTH_TOKEN_SERVICE    == token flow service name (often registry FQDN)
 #   REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE == same PEM as token.certificate (JWT public key)
 #

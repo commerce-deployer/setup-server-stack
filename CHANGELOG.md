@@ -7,7 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ### Added
 
 - Unified **Setup Server Stack** installer (`setup-server-stack.sh`).
-- Compose profiles: Traefik, registry, docker_auth, Portainer, Watchtower, Semaphore, Doku, Duplicati, Uptime Kuma, Filebrowser.
+- Compose profiles: Traefik, Registry, Registry auth, Portainer, Watchtower, Semaphore, Doku, Duplicati, Uptime Kuma, Filebrowser.
 - Optional databases: MongoDB, PostgreSQL, MariaDB, MySQL.
 - DB web UIs: mongo-express, pgAdmin (auto-linked to Postgres), Adminer.
 - Deployer integration (`ENABLE_DEPLOYER`, build into registry).

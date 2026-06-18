@@ -15,7 +15,7 @@ Works as a **main** host (Traefik, registry, panels) or a lean **node** via [Com
 | Category | Services |
 |----------|----------|
 | Network & TLS | Traefik 3.6, Let's Encrypt |
-| Images | Private Docker Registry + `docker_auth` (token flow) |
+| Images | Private Docker Registry + Registry auth (`docker_auth` token flow) |
 | Operations | Portainer, Watchtower, Semaphore, Doku, Duplicati, Uptime Kuma, Filebrowser |
 | App deployment | Deployer (optional, `ENABLE_DEPLOYER=1` + `DEPLOYER_IMAGE`) |
 | Databases | MongoDB, PostgreSQL, MariaDB, MySQL (optional) |

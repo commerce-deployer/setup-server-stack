@@ -1,4 +1,4 @@
-# Setup Server Stack (Traefik 3.6, registry + docker_auth, Portainer, Watchtower, Semaphore, Doku, Duplicati, Kuma, Filebrowser).
+# Setup Server Stack (Traefik 3.6, Registry + Registry auth, Portainer, Watchtower, Semaphore, Doku, Duplicati, Kuma, Filebrowser).
 # Optional DBs and DB UIs: use COMPOSE_PROFILES or `docker compose --profile <name>`.
 # Run: sudo bash setup-server-stack.sh — writes $STACK_ROOT/.env.stack for docker compose.
 
@@ -66,7 +66,7 @@ services:
     environment:
       REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
       REGISTRY_AUTH: token
-      REGISTRY_AUTH_TOKEN_REALM: https://auth.${DOMAIN}/auth
+      REGISTRY_AUTH_TOKEN_REALM: https://registry-auth.${DOMAIN}/auth
       REGISTRY_AUTH_TOKEN_SERVICE: registry.${DOMAIN}
       REGISTRY_AUTH_TOKEN_ISSUER: ${REGISTRY_AUTH_TOKEN_ISSUER}
       REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE: /certs/registry-token.pem
@@ -83,10 +83,10 @@ services:
     networks:
       - proxynet
 
-  docker-auth:
-    profiles: [docker-auth]
+  registry-auth:
+    profiles: [registry-auth]
     image: ${DOCKER_AUTH_IMAGE:-cesanta/docker_auth:1}
-    container_name: docker-auth
+    container_name: registry-auth
     restart: unless-stopped
     command: /config/auth_config.yml
     volumes:
@@ -96,10 +96,10 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=proxynet
-      - traefik.http.routers.docker-auth.rule=Host(`auth.${DOMAIN}`)
-      - traefik.http.routers.docker-auth.entrypoints=websecure
-      - traefik.http.routers.docker-auth.tls.certresolver=letsencrypt
-      - traefik.http.services.docker-auth.loadbalancer.server.port=5001
+      - traefik.http.routers.registry-auth.rule=Host(`registry-auth.${DOMAIN}`)
+      - traefik.http.routers.registry-auth.entrypoints=websecure
+      - traefik.http.routers.registry-auth.tls.certresolver=letsencrypt
+      - traefik.http.services.registry-auth.loadbalancer.server.port=5001
     networks:
       - proxynet
 
