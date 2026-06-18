@@ -6,7 +6,7 @@
 
 **Never commit:**
 
-- `.env`, `.env.stack`, `.setup-server-stack-secrets`
+- `.env`, `.env.stack`, `.secrets`, `secrets/`
 - `traefik/acme.json`
 - `config/traefik/htpasswd*`, `config/docker_auth/auth_config.yml`, `config/docker/config.json`, `config/pgadmin/*`
 - `certs/*.pem` (private keys)

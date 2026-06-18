@@ -87,7 +87,7 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force
 
 **Важно:** перед запуском создайте локально **`cp .env.example .env`** и пропишите в `.env` хотя бы **`DOMAIN`** и **`ACME_EMAIL`** — иначе на сервер уедет шаблон с `example.com`. Скрипт `setup-server-stack.sh` при отсутствии `.env` на сервере завершится с ошибкой; удобнее один раз подготовить `.env` на ПК и дать скрипту залить его вместе с остальным.
 
-После успешной установки **`deploy-from-windows.ps1`** скачивает **`.setup-server-stack-secrets`** в ту же папку на ПК (рядом с `.env`), затем включает SSH hardening на сервере.
+После успешной установки **`deploy-from-windows.ps1`** скачивает серверный **`.secrets`** в локальный архив **`secrets/<timestamp>`**, затем включает SSH hardening на сервере.
 
 Подключение под **`root`**. Пароль спрашивается **один раз** в начале (дальше копирование и установка идут по одной SSH-сессии); либо **`-SshIdentityFile`** / **`-RootPassword`**. Docker на VPS: уже установлен или **`INSTALL_DOCKER=1`** в `.env` (§2.1).
 
@@ -127,7 +127,7 @@ nano .env
 | `DOMAIN` | `company.ru` | Все поддомены вида `kuma.company.ru` |
 | `ACME_EMAIL` | `you@company.ru` | Let's Encrypt |
 
-Остальное можно оставить как в примере; **пустые пароли** скрипт при первом запуске **сам допишет** в файл **`.setup-server-stack-secrets`** (см. ниже).
+Остальное можно оставить как в примере; **пустые пароли** скрипт при первом запуске **сам допишет** в файл **`.secrets`** (см. ниже).
 
 **Пример минимального фрагмента `.env`:**
 
@@ -151,8 +151,8 @@ sudo bash ./setup-server-stack.sh
 
 - создаст сеть Docker **`proxynet`** (если её нет);
 - создаст каталоги под `traefik/acme.json`, ключи registry, конфиги;
-- сгенерирует **случайные пароли** там, где в `.env` они пустые, и запишет их в **`.setup-server-stack-secrets`**;
-- подготовит **Traefik** basic-auth: `config/traefik/htpasswd` (dashboard) и `config/traefik/htpasswd-doku` (**Doku**); пароли в `.setup-server-stack-secrets` — `TRAEFIK_DASHBOARD_PASSWORD` и `DOKU_DASHBOARD_PASSWORD` (в `.env` их не дублируйте);
+- сгенерирует **случайные пароли** там, где в `.env` они пустые, и запишет их в **`.secrets`**;
+- подготовит **Traefik** basic-auth: `config/traefik/htpasswd` (dashboard) и `config/traefik/htpasswd-doku` (**Doku**); пароли в `.secrets` — `TRAEFIK_DASHBOARD_PASSWORD` и `DOKU_DASHBOARD_PASSWORD` (в `.env` их не дублируйте);
 - сгенерирует **ключи JWT** для Registry / Registry auth;
 - соберёт **`auth_config.yml`** из шаблона;
 - соберёт **`config/docker/config.json`** для Watchtower (чтобы тянуть образы с вашего registry);
@@ -164,7 +164,7 @@ sudo bash ./setup-server-stack.sh
 **Повторный запуск** `sudo bash ./setup-server-stack.sh` без флагов:
 
 - **не** удалит тома контейнеров;
-- **не** перезапишет уже существующие секреты в `.setup-server-stack-secrets` без необходимости;
+- **не** перезапишет уже существующие секреты в `.secrets` без необходимости;
 - **не** трогает `acme.json` с сертификатами так, чтобы сломать выдачу LE.
 
 Если нужно **пересоздать секреты** (осторожно: сменятся пароли, может понадобиться заново залогиниться в registry и обновить клиенты):
@@ -175,10 +175,10 @@ sudo bash ./setup-server-stack.sh --force-secrets
 
 ### Шаг 5. Посмотреть сгенерированные пароли
 
-Файл **`.setup-server-stack-secrets`** в каталоге `setup-server-stack` (права `600`). Просмотр:
+Файл **`.secrets`** в каталоге `setup-server-stack` (права `600`). Просмотр:
 
 ```bash
-cat .setup-server-stack-secrets
+cat .secrets
 ```
 
 Там, например:
@@ -189,7 +189,7 @@ cat .setup-server-stack-secrets
 - `SEMAPHORE_ADMIN_PASSWORD`, `SEMAPHORE_ACCESS_KEY_ENCRYPTION` — для Semaphore;
 - при включённых БД — пароли Mongo/Postgres/MariaDB/MySQL и веб-морд.
 
-**Не коммитьте** `.setup-server-stack-secrets` в git (он в `.gitignore`).
+**Не коммитьте** `.secrets` в git (он в `.gitignore`).
 
 ---
 
@@ -199,7 +199,7 @@ cat .setup-server-stack-secrets
 |-------------------|--------------------------------|
 | Нет сети `proxynet` | Сеть создана |
 | Нет `acme.json` или пустой | Файл создан, права 600; позже LE заполнит сертификаты |
-| Нет `.setup-server-stack-secrets` | Появился с паролями |
+| Нет `.secrets` | Появился с паролями |
 | Нет `htpasswd` / `htpasswd-doku` | Появились (Traefik UI: **admin**; Doku: **doku**) |
 | Контейнеры не запущены | `docker compose --env-file .env.stack up -d` — сервисы работают |
 
@@ -229,11 +229,11 @@ docker compose -f docker-compose.yml --env-file .env.stack ps
 
 | Сервис | Адрес | Как зайти (логин / пароль) |
 |--------|-------|----------------------------|
-| Traefik dashboard | `https://traefik.company.ru` | Логин **`admin`**, пароль **`TRAEFIK_DASHBOARD_PASSWORD`** из `.setup-server-stack-secrets` |
-| Registry | `https://registry.company.ru` | **`docker login`**: push — **`REGISTRY_USER`** / **`REGISTRY_PASSWORD`**; pull-only — **`REGISTRY_PULL_USER`** / **`REGISTRY_PULL_PASSWORD`** (см. `.setup-server-stack-secrets`) |
+| Traefik dashboard | `https://traefik.company.ru` | Логин **`admin`**, пароль **`TRAEFIK_DASHBOARD_PASSWORD`** из `.secrets` |
+| Registry | `https://registry.company.ru` | **`docker login`**: push — **`REGISTRY_USER`** / **`REGISTRY_PASSWORD`**; pull-only — **`REGISTRY_PULL_USER`** / **`REGISTRY_PULL_PASSWORD`** (см. `.secrets`) |
 | Portainer | `https://portainer.company.ru` | **Первый заход** — мастер создаёт админа в браузере |
-| Semaphore | `https://semaphore.company.ru` | **`SEMAPHORE_ADMIN`** и пароль из `.env` / `.setup-server-stack-secrets` |
-| Doku | `https://doku.company.ru` | **Basic Auth в Traefik:** логин **`doku`**, пароль **`DOKU_DASHBOARD_PASSWORD`** в `.setup-server-stack-secrets`; файл `config/traefik/htpasswd-doku` создаёт `setup-server-stack.sh` |
+| Semaphore | `https://semaphore.company.ru` | **`SEMAPHORE_ADMIN`** и пароль из `.env` / `.secrets` |
+| Doku | `https://doku.company.ru` | **Basic Auth в Traefik:** логин **`doku`**, пароль **`DOKU_DASHBOARD_PASSWORD`** в `.secrets`; файл `config/traefik/htpasswd-doku` создаёт `setup-server-stack.sh` |
 | Duplicati | `https://duplicati.company.ru` | **Первый заход** — пароль в UI; задания бэкапа настраиваются в UI (§8) |
 | Uptime Kuma | `https://kuma.company.ru` | **Первый заход** — создаёте админа в UI |
 | Filebrowser | `https://filebrowser.company.ru` | Логин **`admin`**, первичный пароль в `docker logs filebrowser`; каталог на хосте — `FILEBROWSER_ROOT_PATH` (пусто = `$STACK_ROOT/filebrowser/files`) |
@@ -249,7 +249,7 @@ docker compose -f docker-compose.yml --env-file .env.stack ps
 
 ## 7. Опционально: базы данных и веб-морды
 
-В **`.env`** выставьте флаги **`1`** и **заполните пароли** (или оставьте пустыми — тогда при первом запуске `setup-server-stack.sh` допишет их в `.setup-server-stack-secrets` там, где скрипт это поддерживает):
+В **`.env`** выставьте флаги **`1`** и **заполните пароли** (или оставьте пустыми — тогда при первом запуске `setup-server-stack.sh` допишет их в `.secrets` там, где скрипт это поддерживает):
 
 ```env
 ENABLE_MONGO=1
@@ -280,7 +280,7 @@ docker compose --env-file .env.stack -f docker-compose.yml up -d
 - `https://pgadmin.company.ru` — после входа в pgAdmin сервер **Postgres** уже в списке (как mongo-express к Mongo).
 - `https://adminer.company.ru`
 
-Пароли — переменные `MONGO_EXPRESS_*`, `PGADMIN_*` и т.д. в `.env` / `.setup-server-stack-secrets`.
+Пароли — переменные `MONGO_EXPRESS_*`, `PGADMIN_*` и т.д. в `.env` / `.secrets`.
 
 ---
 
@@ -419,8 +419,8 @@ bash tests/run-ci.sh
 
 1. **Нет зелёного замочка в браузере** — подождите DNS, проверьте `ACME_EMAIL` и что порты 80/443 доступны с интернета.
 2. **502 / нет ответа** — `docker compose ... ps` и `docker logs имя-контейнера`.
-3. **Не пускает в registry** — проверьте `REGISTRY_USER` / `REGISTRY_PASSWORD` в `.env` и `.setup-server-stack-secrets`; перезапустите `sudo bash ./setup-server-stack.sh`. Убедитесь, что `config/docker_auth/auth_config.yml` и ключи в `certs/` согласованы (генерируются скриптом). Клиент: `docker login registry.${DOMAIN}`.
-4. **Забыли пароль Traefik или Doku** — смотрите `.setup-server-stack-secrets` (`TRAEFIK_DASHBOARD_PASSWORD`, `DOKU_DASHBOARD_PASSWORD`) или пересоздайте соответствующий `htpasswd*` через `sudo bash ./setup-server-stack.sh --force-secrets` (осторожно: пересоздаст и другие секреты).
+3. **Не пускает в registry** — проверьте `REGISTRY_USER` / `REGISTRY_PASSWORD` в `.env` и `.secrets`; перезапустите `sudo bash ./setup-server-stack.sh`. Убедитесь, что `config/docker_auth/auth_config.yml` и ключи в `certs/` согласованы (генерируются скриптом). Клиент: `docker login registry.${DOMAIN}`.
+4. **Забыли пароль Traefik или Doku** — смотрите `.secrets` (`TRAEFIK_DASHBOARD_PASSWORD`, `DOKU_DASHBOARD_PASSWORD`) или пересоздайте соответствующий `htpasswd*` через `sudo bash ./setup-server-stack.sh --force-secrets` (осторожно: пересоздаст и другие секреты).
 
 ---
 
@@ -430,7 +430,7 @@ bash tests/run-ci.sh
 |------|------------|
 | `docker-compose.yml` | Стек и Compose profiles |
 | `.env` / `.env.stack` | Настройки; `.env.stack` собирается скриптом (chmod 600) |
-| `.setup-server-stack-secrets` | Автогенерируемые пароли (не в git) |
+| `.secrets` | Автогенерируемые пароли (не в git) |
 | `${STACK_ROOT}/traefik/acme.json` | Сертификаты Let's Encrypt |
 | `${STACK_ROOT}/certs/registry-token*.pem` | JWT для Registry + Registry auth |
 | `${STACK_ROOT}/config/traefik/htpasswd*` | Basic Auth Traefik / Doku |

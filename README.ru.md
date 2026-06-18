@@ -67,7 +67,7 @@ Setup Server Stack — **нижний слой** (инфраструктура V
 
 ## Секреты
 
-Пустые пароли в `.env` при первом запуске дополняются в **`.setup-server-stack-secrets`** (chmod 600). **Не коммитьте** `.env`, `.env.stack`, `.setup-server-stack-secrets`, `traefik/acme.json`, сгенерированные `config/*`.
+Пустые пароли в `.env` при первом запуске дополняются в серверный **`.secrets`** (chmod 600). Windows-deploy сохраняет локальную копию в **`secrets/<timestamp>`**. **Не коммитьте** `.env`, `.env.stack`, `.secrets`, `secrets/`, `traefik/acme.json`, сгенерированные `config/*`.
 
 ---
 

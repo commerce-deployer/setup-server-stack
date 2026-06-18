@@ -67,7 +67,7 @@ Setup Server Stack is the **infrastructure layer**:
 
 ## Secrets
 
-Empty passwords in `.env` are filled on first run into **`.setup-server-stack-secrets`** (chmod 600). **Do not commit** `.env`, `.env.stack`, `.setup-server-stack-secrets`, `traefik/acme.json`, or generated `config/*`.
+Empty passwords in `.env` are filled on first run into server **`.secrets`** (chmod 600). Windows deploys archive a local copy in **`secrets/<timestamp>`**. **Do not commit** `.env`, `.env.stack`, `.secrets`, `secrets/`, `traefik/acme.json`, or generated `config/*`.
 
 ---
 

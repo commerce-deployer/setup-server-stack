@@ -1,5 +1,5 @@
 # Registry auth (cesanta/docker_auth) — copied to auth_config.yml with substituted secrets
-# (setup-server-stack.sh renders from this template using .env / .setup-server-stack-secrets).
+# (setup-server-stack.sh renders from this template using .env / .secrets).
 #
 # Must match registry (see INSTALL.md — registry troubleshooting):
 #   REGISTRY_AUTH_TOKEN_ISSUER     == token.issuer (below)

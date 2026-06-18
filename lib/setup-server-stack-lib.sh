@@ -377,7 +377,7 @@ write_doku_htpasswd() {
 }
 
 write_stack_secrets() {
-  local sec="$SCRIPT_DIR/.setup-server-stack-secrets"
+  local sec="$SCRIPT_DIR/.secrets"
   if [[ "$FORCE_SECRETS" -eq 1 ]] && [[ -f "$sec" ]]; then
     rm -f "$sec"
   fi
@@ -607,7 +607,7 @@ write_stack_secrets() {
 
 merge_secrets_for_compose() {
   source_env_file_safely "$ENV_FILE"
-  source_env_file_safely "$SCRIPT_DIR/.setup-server-stack-secrets"
+  source_env_file_safely "$SCRIPT_DIR/.secrets"
   export STACK_ROOT
   STACK_ROOT=$(cd "$SCRIPT_DIR" && cd "${STACK_ROOT:-.}" && pwd)
   export STACK_ROOT
@@ -1385,9 +1385,9 @@ print_urls() {
   echo ""
   echo "Volumes and config: STACK_ROOT=$STACK_ROOT"
   echo "Compose env: $STACK_ROOT/.env.stack (generated, chmod 600)."
-  echo "Secrets: $SCRIPT_DIR/.setup-server-stack-secrets (do not commit)."
-  echo "Traefik dashboard: user admin, password in TRAEFIK_DASHBOARD_PASSWORD in .setup-server-stack-secrets."
-  echo "Doku: user doku, password in DOKU_DASHBOARD_PASSWORD in .setup-server-stack-secrets (Traefik Basic Auth)."
+  echo "Secrets: $SCRIPT_DIR/.secrets (do not commit)."
+  echo "Traefik dashboard: user admin, password in TRAEFIK_DASHBOARD_PASSWORD in .secrets."
+  echo "Doku: user doku, password in DOKU_DASHBOARD_PASSWORD in .secrets (Traefik Basic Auth)."
   registry_enabled && echo "docker login (push):  docker login registry.${d}  # user ${REGISTRY_USER}"
   registry_enabled && echo "docker login (pull):  docker login registry.${d}  # user ${REGISTRY_PULL_USER:-registrypull}"
 }
@@ -1415,7 +1415,7 @@ main() {
   validate_enable_flags
 
   if [[ "$FORCE_SECRETS" -eq 1 ]]; then
-    echo "--force-secrets: regenerating secrets in .setup-server-stack-secrets (acme.json untouched)."
+    echo "--force-secrets: regenerating secrets in .secrets (acme.json untouched)."
   fi
 
   create_admin_user

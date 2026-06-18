@@ -7,7 +7,7 @@
 
   Host: DOMAIN in .env or -RemoteHost. Remote path: SETUP_SERVER_STACK_ROOT in .env or /opt/setup-server-stack.
   Options: -SkipInstall, -ForceSecrets, -SshIdentityFile path\to\key, -RootPassword (SecureString)
-  After install: downloads .setup-server-stack-secrets to LocalStackPath, then applies SSH hardening on the server.
+  After install: downloads server .secrets to LocalStackPath\secrets\<timestamp>, then applies SSH hardening on the server.
 #>
 
 [CmdletBinding()]
@@ -116,18 +116,27 @@ $lastSlash = $RemotePath.LastIndexOf("/")
 $remoteParent = if ($lastSlash -le 0) { "/" } else { $RemotePath.Substring(0, $lastSlash) }
 $remoteLeaf = Split-Path -Leaf $RemotePath
 
-$CopySourcePath = $LocalStackPath
-if (Test-Cmd "robocopy") {
-    $stRoot = Join-Path $env:TEMP ("sss-deploy-{0}" -f $PID)
-    $st = Join-Path $stRoot $remoteLeaf
-    if (Test-Path -LiteralPath $stRoot) { Remove-Item -LiteralPath $stRoot -Recurse -Force }
-    New-Item -ItemType Directory -Path $st -Force | Out-Null
-    & robocopy.exe $LocalStackPath $st /E /XD .git .ssh-bootstrap /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
-    if ($LASTEXITCODE -lt 8) {
-        $CopySourcePath = $st
-        $script:DeployStagingPath = $stRoot
-    }
+$CopySourcePath = $null
+if (-not (Test-Cmd "robocopy")) {
+    Write-Error "robocopy is required to create a safe upload staging folder on Windows."
 }
+$stRoot = Join-Path $env:TEMP ("sss-deploy-{0}" -f $PID)
+$st = Join-Path $stRoot $remoteLeaf
+if (Test-Path -LiteralPath $stRoot) { Remove-Item -LiteralPath $stRoot -Recurse -Force }
+New-Item -ItemType Directory -Path $st -Force | Out-Null
+$excludeDirs = @(".git", ".ssh-bootstrap", ".cursor", "secrets", "traefik", "filebrowser", "certs")
+$excludeFiles = @(
+    ".secrets", ".setup-server-stack-secrets", ".env.stack",
+    "*.secrets", "*.secrets-backup", "secrets-backup.txt",
+    "acme.json", "*.pem", "auth_config.yml", "config.json",
+    "htpasswd", "htpasswd-doku", "docker-compose.override.yml"
+)
+& robocopy.exe $LocalStackPath $st /E /XD @excludeDirs /XF @excludeFiles /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+if ($LASTEXITCODE -ge 8) {
+    Write-Error "robocopy staging failed with exit code $LASTEXITCODE."
+}
+$CopySourcePath = $st
+$script:DeployStagingPath = $stRoot
 $localLeaf = Split-Path -Leaf $CopySourcePath
 
 if ($enableDeployer -and [string]::IsNullOrWhiteSpace($deployerImageFromEnv)) {
@@ -428,12 +437,15 @@ try {
     $exitInstall = $LASTEXITCODE
     if ($exitInstall -ne 0) { exit $exitInstall }
 
-    $localSecrets = Join-Path $LocalStackPath ".setup-server-stack-secrets"
-    $remoteSecrets = "${sshTarget}:${RemotePath}/.setup-server-stack-secrets"
-    Write-Host "4/5 Downloading .setup-server-stack-secrets to $localSecrets ..." -ForegroundColor Green
+    $localSecretsDir = Join-Path $LocalStackPath "secrets"
+    New-Item -ItemType Directory -Path $localSecretsDir -Force | Out-Null
+    $localSecretsName = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+    $localSecrets = Join-Path $localSecretsDir $localSecretsName
+    $remoteSecrets = "${sshTarget}:${RemotePath}/.secrets"
+    Write-Host "4/5 Downloading .secrets to $localSecrets ..." -ForegroundColor Green
     Invoke-DeployScp -BaseArgs $ca -ExtraArgs @($remoteSecrets, $localSecrets)
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to download .setup-server-stack-secrets from the server."
+        Write-Error "Failed to download .secrets from the server."
     }
     if (-not (Test-Path -LiteralPath $localSecrets)) {
         Write-Error "Secrets file missing after download: $localSecrets"

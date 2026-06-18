@@ -1,12 +1,15 @@
-# Local config and generated passwords (installer + deploy-from-windows.ps1 download).
-# Secrets file name: .setup-server-stack-secrets (same path on VPS and on your PC).
+# Local config and generated passwords.
+# Server working secrets: .secrets. Windows downloads are archived in secrets/.
 .env
 .env.local
 .env.*.local
 .env.stack
+.secrets
+**/.secrets
 .setup-server-stack-secrets
 **/.setup-server-stack-secrets
-*.secrets
+secrets/
+**/secrets/
 secrets-backup.txt
 *.secrets-backup
 
