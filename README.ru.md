@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/commercedeployer/setup-server-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/commercedeployer/setup-server-stack/actions/workflows/ci.yml)
 
-**Setup Server Stack** — open-source установщик VPS-инфраструктуры: один скрипт, один `.env`, готовые HTTPS-сервисы и опциональные базы данных. Состав сервисов включается флагами `ENABLE_*` — без отдельных «стеков» и ручной склейки compose.
+**Setup Server Stack** — open-source установщик VPS-инфраструктуры: один скрипт, один `.env`, явно включаемые сервисы и опциональные базы данных. Сервис ставится только при `ENABLE_*=1`; если строки `ENABLE_*` нет, сервис не ставится — без отдельных «стеков» и ручной склейки compose.
 
 Подходит для **main**-хоста (Traefik, registry, панели) и **node**-роли — через [Compose profiles](https://docs.docker.com/compose/profiles/).
 
@@ -14,7 +14,7 @@
 
 | Категория | Сервисы |
 |-----------|---------|
-| Сеть и TLS | Traefik 3.6, Let's Encrypt |
+| Сеть и TLS | Traefik 3.6, Let's Encrypt production/staging, self-signed QA-режим |
 | Образы | Private Docker Registry + Registry auth (`docker_auth` token flow) |
 | Операции | Portainer, Watchtower, Semaphore, Doku, Duplicati, Uptime Kuma, Filebrowser |
 | Деплой приложений | Deployer (опционально, `ENABLE_DEPLOYER=1` + `DEPLOYER_IMAGE`) |
@@ -33,7 +33,9 @@
 git clone https://github.com/commercedeployer/setup-server-stack.git setup-server-stack
 cd setup-server-stack
 cp .env.example .env
-# Заполните DOMAIN, ACME_EMAIL, SSH_PUBLIC_KEY; включите нужные ENABLE_*=1
+# .env.example — полный QA-стек; удалите ENABLE_*=1 для ненужных сервисов
+# Заполните DOMAIN, ACME_EMAIL, SSH_PUBLIC_KEY
+# Для частых QA-переустановок: TRAEFIK_CERT_MODE=staging или selfsigned
 # Deployer: ENABLE_DEPLOYER=1 и DEPLOYER_IMAGE=docker.io/commercedeployer/deployer:latest
 chmod +x setup-server-stack.sh install.sh
 sudo bash ./setup-server-stack.sh

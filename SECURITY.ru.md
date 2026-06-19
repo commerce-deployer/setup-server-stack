@@ -24,17 +24,18 @@
 Панели открываются как `https://<сервис>.${DOMAIN}`. **Traefik Basic Auth** (дополнительный пароль до входа в приложение) включён **только** для:
 
 - **dashboard Traefik** (`admin` + `TRAEFIK_DASHBOARD_PASSWORD`)
-- **Doku** (`doku` + `DOKU_DASHBOARD_PASSWORD`)
+- **Doku** (`STACK_ADMIN_USER` + `DOKU_DASHBOARD_PASSWORD`; `DOKU_DASHBOARD_USER` может переопределить)
 
 Остальные HTTPS-панели защищены **только логином приложения** (или мастером «первого захода»):
 
-| Логин в приложении | Portainer, Semaphore, Duplicati, Uptime Kuma, Filebrowser, Deployer (если включён), mongo-express, pgAdmin, Adminer |
+| Логин в приложении | Portainer, Semaphore, Duplicati (`DUPLICATI_WEBSERVICE_PASSWORD`), Uptime Kuma, Filebrowser (`STACK_ADMIN_USER` + `FILEBROWSER_PASSWORD`; `FILEBROWSER_USER` может переопределить), Deployer (если включён), mongo-express, pgAdmin, Adminer |
 | Не браузерная панель | Registry (`docker login`), Registry auth (`registry-auth.${DOMAIN}`) |
 
 **Практика**
 
-- HTTPS шифрует трафик, но **не** добавляет второй барьер на большинстве панелей — используйте сильные пароли в `.env` / secrets и отключайте ненужные сервисы (`ENABLE_*=0`).
-- **Первый заход** (Portainer, Duplicati, Uptime Kuma): сразу после установки завершите создание админа, пока URL не стал публичным.
+- HTTPS шифрует трафик, но **не** добавляет второй барьер на большинстве панелей — используйте сильные пароли в `.env` / secrets и не включайте ненужные сервисы (или ставьте `ENABLE_*=0`).
+- `TRAEFIK_CERT_MODE=staging` и `TRAEFIK_CERT_MODE=selfsigned` — QA-режимы. HTTPS-маршрутизация остаётся, но браузер не будет доверять сертификату.
+- **Первый заход** (Portainer, Uptime Kuma): сразу после установки завершите создание админа, пока URL не стал публичным.
 - **Filebrowser** отдаёт только `FILEBROWSER_ROOT_PATH` на хосте (по умолчанию `$STACK_ROOT/filebrowser/files`). На проде **не** ставьте `/`.
 - IP-фильтр, middleware Traefik, доступ только через VPN — **по умолчанию не настраиваются**.
 

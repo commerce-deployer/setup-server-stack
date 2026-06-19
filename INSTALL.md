@@ -34,7 +34,7 @@ All services use `https://service.your-domain`. Set **`DOMAIN`** once in `.env`.
 
 - **Linux** (Ubuntu/Debian) with **SSH** access.
 - **Docker** and **Docker Compose v2** (`docker compose`). Set **`INSTALL_DOCKER=1`** in `.env` to install Docker from the official repo.
-- With **`ENABLE_REGISTRY=1`** (default), the installer installs **`gettext-base`** on Debian/Ubuntu if `envsubst` is missing (registry `auth_config.yml` generation).
+- With **`ENABLE_REGISTRY=1`**, the installer installs **`gettext-base`** on Debian/Ubuntu if `envsubst` is missing (registry `auth_config.yml` generation).
 - Run **`sudo bash ./setup-server-stack.sh`** on the VPS (not on Windows as the production host). **`./install.sh`** is a thin wrapper.
 
 ### 2.2 Domain and DNS
@@ -109,18 +109,41 @@ nano .env
 | Variable | Example | Purpose |
 |----------|---------|---------|
 | `DOMAIN` | `example.com` | All `*.example.com` subdomains |
-| `ACME_EMAIL` | `you@example.com` | Let's Encrypt |
+| `ACME_EMAIL` | `you@example.com` | Let's Encrypt (`letsencrypt` / `staging` modes) |
+| `STACK_ADMIN_USER` | `admin` | Default admin login for stack services |
+| `STACK_ADMIN_EMAIL` | `admin@example.com` | Default admin email for panels that require email login |
+
+Services are opt-in: a service is installed only when its `ENABLE_*=1` flag is present. Missing `ENABLE_*` means `0`. `ENABLE_DOCKER_AUTH` follows `ENABLE_REGISTRY` unless set explicitly.
+
+`.env.example` is intentionally a full QA/example stack with all supported services enabled. For production, keep only the `ENABLE_*=1` lines you need.
 
 Empty passwords are filled on first run into **`.secrets`**.
 
 ```env
 DOMAIN=example.com
 ACME_EMAIL=admin@example.com
+STACK_ADMIN_USER=admin
+STACK_ADMIN_EMAIL=admin@example.com
+TRAEFIK_CERT_MODE=letsencrypt
 STACK_ROOT=.
 TZ=Europe/Helsinki
 ```
 
 `STACK_ROOT=.` keeps data next to `docker-compose.yml`. Use an absolute path if you prefer.
+
+**TLS certificate modes:**
+
+| `TRAEFIK_CERT_MODE` | Use for | Browser trust |
+|---------------------|---------|---------------|
+| `letsencrypt` | Production | Trusted if DNS/ports/rate limits are OK |
+| `staging` | Reinstall-heavy QA | Browser warning is expected |
+| `selfsigned` | QA without Let's Encrypt requests | Browser warning is expected |
+
+`ACME_EMAIL` is required for `letsencrypt` and `staging`; `selfsigned` does not contact Let's Encrypt.
+
+Production and staging ACME storage files are separate (`acme.json` / `acme-staging.json`), so QA certificates do not pollute production checks.
+
+After `docker compose up`, the installer checks every enabled HTTPS host and prints `TLS OK` or `TLS WARN`. This matters because Let's Encrypt can issue some host certificates and then reject the rest due to DNS, ports, or rate limits.
 
 ### Step 4. Run the installer
 
@@ -137,7 +160,8 @@ On first run the script:
 - builds Traefik htpasswd (dashboard + Doku);
 - generates JWT keys and **`auth_config.yml`**;
 - writes **`$STACK_ROOT/.env.stack`** (chmod 600);
-- runs **`docker compose --env-file .env.stack up -d`**.
+- runs **`docker compose --env-file .env.stack up -d`**;
+- checks TLS certificates per enabled HTTPS host and prints clear `TLS OK` / `TLS WARN` lines.
 
 Re-run without flags: does **not** remove volumes or overwrite existing secrets / `acme.json`.
 
@@ -165,6 +189,7 @@ Includes `TRAEFIK_DASHBOARD_PASSWORD`, `REGISTRY_PASSWORD`, `REGISTRY_PULL_PASSW
 | No / empty `acme.json` | File created (chmod 600) |
 | No secrets file | `.secrets` with passwords |
 | Containers down | `docker compose up -d` running |
+| Unknown TLS state | Per-host `TLS OK` / `TLS WARN` diagnostics printed |
 
 ```bash
 docker compose -f docker-compose.yml --env-file .env.stack ps
@@ -191,16 +216,16 @@ Replace `example.com` with your **`DOMAIN`**:
 | Service | URL | Login |
 |---------|-----|-------|
 | Traefik | `https://traefik.example.com` | `admin` + `TRAEFIK_DASHBOARD_PASSWORD` |
-| Registry | `https://registry.example.com` | `docker login registry.example.com` |
-| Portainer | `https://portainer.example.com` | First visit — create admin in UI |
-| Semaphore | `https://semaphore.example.com` | `SEMAPHORE_ADMIN` + password from secrets |
-| Doku | `https://doku.example.com` | `doku` + `DOKU_DASHBOARD_PASSWORD` |
-| Duplicati | `https://duplicati.example.com` | Set password on first visit; backup jobs configured in UI (see §8) |
-| Uptime Kuma | `https://kuma.example.com` | Create admin on first visit |
-| Filebrowser | `https://filebrowser.example.com` | `admin`; initial password in `docker logs filebrowser`; rw host path from `FILEBROWSER_ROOT_PATH` (empty = `$STACK_ROOT/filebrowser/files`) |
+| Registry | `https://registry.example.com` | push: `STACK_ADMIN_USER` / `REGISTRY_PASSWORD`; pull-only: `REGISTRY_PULL_USER` / `REGISTRY_PULL_PASSWORD` |
+| Portainer | `https://portainer.example.com` | First visit — create admin in UI; secrets marker: `PORTAINER_ADMIN_PASSWORD=SET_ON_FIRST_LOGIN` |
+| Semaphore | `https://semaphore.example.com` | `STACK_ADMIN_USER` + `SEMAPHORE_ADMIN_PASSWORD` |
+| Doku | `https://doku.example.com` | `STACK_ADMIN_USER` + `DOKU_DASHBOARD_PASSWORD` |
+| Duplicati | `https://duplicati.example.com` | Password: `DUPLICATI_WEBSERVICE_PASSWORD` from secrets; backup jobs configured in UI (see §8) |
+| Uptime Kuma | `https://kuma.example.com` | Create admin on first visit; secrets marker: `UPTIME_KUMA_ADMIN_PASSWORD=SET_ON_FIRST_LOGIN` |
+| Filebrowser | `https://filebrowser.example.com` | `STACK_ADMIN_USER` + `FILEBROWSER_PASSWORD`; rw host path from `FILEBROWSER_ROOT_PATH` (empty = `$STACK_ROOT/filebrowser/files`) |
+| Deployer | `https://deployer.example.com` | `STACK_ADMIN_USER` / `DEPLOYER_ADMIN_PASSWORD` |
 
 **Filebrowser:** by default only `$STACK_ROOT/filebrowser/files` is exposed (not the whole server). Setting `FILEBROWSER_ROOT_PATH=/` mounts the entire host — avoid on production. See [SECURITY.md](SECURITY.md#web-panels-https-edge).
-| Deployer | `https://deployer.example.com` | `DEPLOYER_ADMIN_USER` / `DEPLOYER_ADMIN_PASSWORD` |
 
 `registry-auth.example.com` is **Registry auth** (Docker token protocol, powered by `docker_auth`; not a human panel).
 
@@ -322,7 +347,7 @@ The stack starts the **Duplicati web UI** and stores its settings in the Docker 
 - **Destination** — S3, Backblaze, SFTP, another server, etc.
 - **Schedule** — when jobs run
 
-After install, open `https://duplicati.${DOMAIN}`, set a password, then create a backup job in the UI.
+After install, open `https://duplicati.${DOMAIN}`, log in with `DUPLICATI_WEBSERVICE_PASSWORD` from secrets, then create a backup job in the UI.
 
 By default Duplicati only sees its own `/config` inside the container. To back up stack data (e.g. `${STACK_ROOT}`, Docker named volumes), add **read-only** bind mounts to the `duplicati` service in `docker-compose.yml` (examples are commented there), then `docker compose ... up -d`. Paths must be readable by `DUP_PUID` / `DUP_PGID` (default `1000`).
 
@@ -342,7 +367,7 @@ Contributor check (no VPS): `bash tests/run-ci.sh` — uses `tests/fixtures/*.en
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `CREATE_ADMIN_USER` | `1` | Sudo user `ADMIN_USERNAME` with docker group |
+| `CREATE_ADMIN_USER` | `1` | Sudo user `STACK_ADMIN_USER` with docker group (`ADMIN_USERNAME` can override it) |
 | `ADMIN_SUDO_NOPASSWD` | `1` | NOPASSWD sudo for admin user |
 | `APPLY_SSH_HARDENING` | `1` | Key-only SSH, no root/password login |
 | `UFW_ENABLE` | `1` | Open SSH, 80, 443 |
@@ -356,7 +381,7 @@ Contributor check (no VPS): `bash tests/run-ci.sh` — uses `tests/fixtures/*.en
 
 1. **No HTTPS padlock** — wait for DNS, check `ACME_EMAIL`, ports 80/443 reachable from the internet.
 2. **502 / no response** — `docker compose ... ps`, `docker logs <container>`.
-3. **Registry login fails** — check `REGISTRY_USER` / `REGISTRY_PASSWORD` in `.env` and secrets; re-run `sudo bash ./setup-server-stack.sh`; verify `config/docker_auth/auth_config.yml` and `certs/` (generated by script). Client: `docker login registry.${DOMAIN}`.
+3. **Registry login fails** — check `STACK_ADMIN_USER` / `REGISTRY_PASSWORD` in `.env` and secrets; re-run `sudo bash ./setup-server-stack.sh`; verify `config/docker_auth/auth_config.yml` and `certs/` (generated by script). Client: `docker login registry.${DOMAIN}`.
 4. **Forgot Traefik or Doku password** — `.secrets` or `--force-secrets` (regenerates all secrets).
 
 ---

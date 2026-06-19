@@ -24,17 +24,18 @@ The installer generates these on the server with `600` / `700` permissions.
 Panels are published as `https://<service>.${DOMAIN}`. **Traefik Basic Auth** (extra password prompt before the app) is enabled **only** for:
 
 - **Traefik dashboard** (`admin` + `TRAEFIK_DASHBOARD_PASSWORD`)
-- **Doku** (`doku` + `DOKU_DASHBOARD_PASSWORD`)
+- **Doku** (`STACK_ADMIN_USER` + `DOKU_DASHBOARD_PASSWORD`; `DOKU_DASHBOARD_USER` can override)
 
 All other HTTPS panels rely on **application login only** (or a first-visit setup wizard):
 
-| Application login | Portainer, Semaphore, Duplicati, Uptime Kuma, Filebrowser, Deployer (if enabled), mongo-express, pgAdmin, Adminer |
+| Application login | Portainer, Semaphore, Duplicati (`DUPLICATI_WEBSERVICE_PASSWORD`), Uptime Kuma, Filebrowser (`STACK_ADMIN_USER` + `FILEBROWSER_PASSWORD`; `FILEBROWSER_USER` can override), Deployer (if enabled), mongo-express, pgAdmin, Adminer |
 | Not a browser UI | Registry (`docker login`), Registry auth (`registry-auth.${DOMAIN}`) |
 
 **What this means**
 
-- HTTPS encrypts traffic but does **not** add a second gate on most panels — protect them with strong app passwords and disable unused services (`ENABLE_*=0` in `.env`).
-- **First-visit setup** (Portainer, Duplicati, Uptime Kuma): complete admin onboarding immediately after install so an anonymous visitor cannot claim the instance.
+- HTTPS encrypts traffic but does **not** add a second gate on most panels — protect them with strong app passwords and leave unused services unset (or set `ENABLE_*=0`).
+- `TRAEFIK_CERT_MODE=staging` and `TRAEFIK_CERT_MODE=selfsigned` are QA modes. They keep HTTPS routing, but browsers will not trust the certificate.
+- **First-visit setup** (Portainer, Uptime Kuma): complete admin onboarding immediately after install so an anonymous visitor cannot claim the instance.
 - **Filebrowser** exposes only `FILEBROWSER_ROOT_PATH` on the host (default: `$STACK_ROOT/filebrowser/files`). Do **not** set it to `/` on production.
 - Optional hardening (IP allowlist, Traefik middleware, VPN-only access) is **not** configured by default.
 

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/commercedeployer/setup-server-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/commercedeployer/setup-server-stack/actions/workflows/ci.yml)
 
-**Setup Server Stack** is an open-source VPS infrastructure installer: one script, one `.env`, HTTPS services out of the box, and optional databases. Enable services with `ENABLE_*` flags — no separate stacks or manual compose wiring.
+**Setup Server Stack** is an open-source VPS infrastructure installer: one script, one `.env`, explicit opt-in services, and optional databases. Enable services with `ENABLE_*=1` flags; missing `ENABLE_*` means “do not install” — no separate stacks or manual compose wiring.
 
 Works as a **main** host (Traefik, registry, panels) or a lean **node** via [Compose profiles](https://docs.docker.com/compose/profiles/).
 
@@ -14,7 +14,7 @@ Works as a **main** host (Traefik, registry, panels) or a lean **node** via [Com
 
 | Category | Services |
 |----------|----------|
-| Network & TLS | Traefik 3.6, Let's Encrypt |
+| Network & TLS | Traefik 3.6, Let's Encrypt production/staging, self-signed QA mode |
 | Images | Private Docker Registry + Registry auth (`docker_auth` token flow) |
 | Operations | Portainer, Watchtower, Semaphore, Doku, Duplicati, Uptime Kuma, Filebrowser |
 | App deployment | Deployer (optional, `ENABLE_DEPLOYER=1` + `DEPLOYER_IMAGE`) |
@@ -33,7 +33,9 @@ Database ports are **not** exposed to the public internet; access is via the Doc
 git clone https://github.com/commercedeployer/setup-server-stack.git setup-server-stack
 cd setup-server-stack
 cp .env.example .env
-# Set DOMAIN, ACME_EMAIL, SSH_PUBLIC_KEY; enable desired ENABLE_*=1
+# .env.example is a full QA stack; remove ENABLE_*=1 lines you do not need
+# Set DOMAIN, ACME_EMAIL, SSH_PUBLIC_KEY
+# For reinstall-heavy QA: TRAEFIK_CERT_MODE=staging or selfsigned
 # Deployer: ENABLE_DEPLOYER=1 and DEPLOYER_IMAGE=docker.io/commercedeployer/deployer:latest
 chmod +x setup-server-stack.sh install.sh
 sudo bash ./setup-server-stack.sh

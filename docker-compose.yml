@@ -24,7 +24,7 @@ services:
       DOMAIN: ${DOMAIN}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ${STACK_ROOT}/traefik/acme.json:/letsencrypt/acme.json
+      - ${TRAEFIK_ACME_STORAGE_FILE:-${STACK_ROOT}/traefik/acme.json}:/letsencrypt/acme.json
       - ${STACK_ROOT}/config/traefik/htpasswd:/etc/traefik/htpasswd:ro
       - ${STACK_ROOT}/config/traefik/htpasswd-doku:/etc/traefik/htpasswd-doku:ro
     command:
@@ -38,8 +38,9 @@ services:
       - --entrypoints.websecure.address=:443
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
-      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.email=${TRAEFIK_ACME_EMAIL:-${ACME_EMAIL}}
       - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.caserver=${TRAEFIK_ACME_CA_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
       - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
       - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
     labels:
@@ -47,7 +48,8 @@ services:
       - traefik.docker.network=proxynet
       - traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN}`)
       - traefik.http.routers.traefik-dashboard.entrypoints=websecure
-      - traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt
+      - traefik.http.routers.traefik-dashboard.tls=true
+      - traefik.http.routers.traefik-dashboard.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.routers.traefik-dashboard.service=api@internal
       - traefik.http.routers.traefik-dashboard.middlewares=traefik-dashboard-auth@docker
       - traefik.http.middlewares.traefik-dashboard-auth.basicauth.usersfile=/etc/traefik/htpasswd
@@ -78,7 +80,8 @@ services:
       - traefik.docker.network=proxynet
       - traefik.http.routers.registry.rule=Host(`registry.${DOMAIN}`)
       - traefik.http.routers.registry.entrypoints=websecure
-      - traefik.http.routers.registry.tls.certresolver=letsencrypt
+      - traefik.http.routers.registry.tls=true
+      - traefik.http.routers.registry.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.services.registry.loadbalancer.server.port=5000
     networks:
       - proxynet
@@ -98,7 +101,8 @@ services:
       - traefik.docker.network=proxynet
       - traefik.http.routers.registry-auth.rule=Host(`registry-auth.${DOMAIN}`)
       - traefik.http.routers.registry-auth.entrypoints=websecure
-      - traefik.http.routers.registry-auth.tls.certresolver=letsencrypt
+      - traefik.http.routers.registry-auth.tls=true
+      - traefik.http.routers.registry-auth.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.services.registry-auth.loadbalancer.server.port=5001
     networks:
       - proxynet
@@ -118,7 +122,8 @@ services:
       - traefik.docker.network=proxynet
       - traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)
       - traefik.http.routers.portainer.entrypoints=websecure
-      - traefik.http.routers.portainer.tls.certresolver=letsencrypt
+      - traefik.http.routers.portainer.tls=true
+      - traefik.http.routers.portainer.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.services.portainer.loadbalancer.server.port=9000
     networks:
       - proxynet
@@ -148,11 +153,11 @@ services:
     environment:
       SEMAPHORE_DB_DIALECT: sqlite
       SEMAPHORE_DB: /var/lib/semaphore/semaphore.sqlite
-      SEMAPHORE_ACCESS_KEY_ENCRYPTION: ${SEMAPHORE_ACCESS_KEY_ENCRYPTION}
-      SEMAPHORE_ADMIN: ${SEMAPHORE_ADMIN}
-      SEMAPHORE_ADMIN_PASSWORD: ${SEMAPHORE_ADMIN_PASSWORD}
+      SEMAPHORE_ACCESS_KEY_ENCRYPTION: ${SEMAPHORE_ACCESS_KEY_ENCRYPTION:-}
+      SEMAPHORE_ADMIN: ${SEMAPHORE_ADMIN:-admin}
+      SEMAPHORE_ADMIN_PASSWORD: ${SEMAPHORE_ADMIN_PASSWORD:-}
       SEMAPHORE_ADMIN_NAME: ${SEMAPHORE_ADMIN_NAME:-Admin}
-      SEMAPHORE_ADMIN_EMAIL: ${SEMAPHORE_ADMIN_EMAIL}
+      SEMAPHORE_ADMIN_EMAIL: ${SEMAPHORE_ADMIN_EMAIL:-admin@example.com}
     volumes:
       - semaphore_data:/var/lib/semaphore
     labels:
@@ -160,7 +165,8 @@ services:
       - traefik.docker.network=proxynet
       - traefik.http.routers.semaphore.rule=Host(`semaphore.${DOMAIN}`)
       - traefik.http.routers.semaphore.entrypoints=websecure
-      - traefik.http.routers.semaphore.tls.certresolver=letsencrypt
+      - traefik.http.routers.semaphore.tls=true
+      - traefik.http.routers.semaphore.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.services.semaphore.loadbalancer.server.port=3000
     networks:
       - proxynet
@@ -179,7 +185,8 @@ services:
       - traefik.docker.network=proxynet
       - traefik.http.routers.doku.rule=Host(`doku.${DOMAIN}`)
       - traefik.http.routers.doku.entrypoints=websecure
-      - traefik.http.routers.doku.tls.certresolver=letsencrypt
+      - traefik.http.routers.doku.tls=true
+      - traefik.http.routers.doku.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.routers.doku.middlewares=doku-auth@docker
       - traefik.http.services.doku.loadbalancer.server.port=9090
     networks:
@@ -198,7 +205,8 @@ services:
       PUID: ${DUP_PUID:-1000}
       PGID: ${DUP_PGID:-1000}
       TZ: ${TZ:-UTC}
-      SETTINGS_ENCRYPTION_KEY: ${DUPLICATI_SETTINGS_ENCRYPTION_KEY}
+      SETTINGS_ENCRYPTION_KEY: ${DUPLICATI_SETTINGS_ENCRYPTION_KEY:-}
+      DUPLICATI__WEBSERVICE_PASSWORD: ${DUPLICATI_WEBSERVICE_PASSWORD:-}
     volumes:
       - duplicati_config:/config
     labels:
@@ -206,7 +214,8 @@ services:
       - traefik.docker.network=proxynet
       - traefik.http.routers.duplicati.rule=Host(`duplicati.${DOMAIN}`)
       - traefik.http.routers.duplicati.entrypoints=websecure
-      - traefik.http.routers.duplicati.tls.certresolver=letsencrypt
+      - traefik.http.routers.duplicati.tls=true
+      - traefik.http.routers.duplicati.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.services.duplicati.loadbalancer.server.port=8200
     networks:
       - proxynet
@@ -223,7 +232,8 @@ services:
       - traefik.docker.network=proxynet
       - traefik.http.routers.kuma.rule=Host(`kuma.${DOMAIN}`)
       - traefik.http.routers.kuma.entrypoints=websecure
-      - traefik.http.routers.kuma.tls.certresolver=letsencrypt
+      - traefik.http.routers.kuma.tls=true
+      - traefik.http.routers.kuma.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.services.kuma.loadbalancer.server.port=3001
     networks:
       - proxynet
@@ -246,22 +256,23 @@ services:
       - traefik.docker.network=proxynet
       - traefik.http.routers.filebrowser.rule=Host(`filebrowser.${DOMAIN}`)
       - traefik.http.routers.filebrowser.entrypoints=websecure
-      - traefik.http.routers.filebrowser.tls.certresolver=letsencrypt
+      - traefik.http.routers.filebrowser.tls=true
+      - traefik.http.routers.filebrowser.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.services.filebrowser.loadbalancer.server.port=80
     networks:
       - proxynet
 
   deployer:
     profiles: [deployer]
-    image: ${DEPLOYER_IMAGE_EFFECTIVE}
+    image: ${DEPLOYER_IMAGE_EFFECTIVE:-${DEPLOYER_IMAGE:-docker.io/commercedeployer/deployer:latest}}
     container_name: deployer
     restart: unless-stopped
     user: root
     environment:
       NODE_ENV: ${DEPLOYER_NODE_ENV:-production}
       ADMIN_USER: ${DEPLOYER_ADMIN_USER:-admin}
-      ADMIN_PASSWORD: ${DEPLOYER_ADMIN_PASSWORD}
-      SESSION_SECRET: ${DEPLOYER_SESSION_SECRET}
+      ADMIN_PASSWORD: ${DEPLOYER_ADMIN_PASSWORD:-}
+      SESSION_SECRET: ${DEPLOYER_SESSION_SECRET:-}
       PORT: 3000
       DEPLOY_BASE_PATH: ${DEPLOY_BASE_PATH:-/opt/deploy-data}
       DEFAULT_PULL_POLICY: ${DEPLOYER_DEFAULT_PULL_POLICY:-always}
@@ -282,7 +293,8 @@ services:
       - traefik.docker.network=proxynet
       - traefik.http.routers.deployer.rule=Host(`deployer.${DOMAIN}`)
       - traefik.http.routers.deployer.entrypoints=websecure
-      - traefik.http.routers.deployer.tls.certresolver=letsencrypt
+      - traefik.http.routers.deployer.tls=true
+      - traefik.http.routers.deployer.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.services.deployer.loadbalancer.server.port=3000
     networks:
       - proxynet
@@ -295,8 +307,8 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-mongoadmin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-}
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -306,9 +318,9 @@ services:
           'mongosh -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand(''ping'').ok" | grep -q 1',
         ]
       interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
+      timeout: 10s
+      retries: 30
+      start_period: 120s
     labels:
       - com.centurylinklabs.watchtower.enable=false
     networks:
@@ -322,9 +334,9 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -346,10 +358,10 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
-      MARIADB_USER: ${MARIADB_USER}
-      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
-      MARIADB_DATABASE: ${MARIADB_DATABASE}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-}
+      MARIADB_USER: ${MARIADB_USER:-app}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-app}
     volumes:
       - mariadb_data:/var/lib/mysql
     healthcheck:
@@ -371,10 +383,10 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
+      MYSQL_USER: ${MYSQL_USER:-app}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-app}
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -397,15 +409,16 @@ services:
       mongo:
         condition: service_healthy
     environment:
-      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/
-      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USER}
-      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USER:-mongoadmin}:${MONGO_ROOT_PASSWORD:-}@mongo:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USER:-mexpress}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD:-}
     labels:
       - traefik.enable=true
       - traefik.docker.network=proxynet
       - traefik.http.routers.mongo-express.rule=Host(`mongo-express.${DOMAIN}`)
       - traefik.http.routers.mongo-express.entrypoints=websecure
-      - traefik.http.routers.mongo-express.tls.certresolver=letsencrypt
+      - traefik.http.routers.mongo-express.tls=true
+      - traefik.http.routers.mongo-express.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.services.mongo-express.loadbalancer.server.port=8081
     networks:
       - proxynet
@@ -419,8 +432,8 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-pgadmin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-}
       PGADMIN_CONFIG_SERVER_MODE: "False"
       PGPASS_FILE: /pgpass
     volumes:
@@ -432,7 +445,8 @@ services:
       - traefik.docker.network=proxynet
       - traefik.http.routers.pgadmin.rule=Host(`pgadmin.${DOMAIN}`)
       - traefik.http.routers.pgadmin.entrypoints=websecure
-      - traefik.http.routers.pgadmin.tls.certresolver=letsencrypt
+      - traefik.http.routers.pgadmin.tls=true
+      - traefik.http.routers.pgadmin.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.services.pgadmin.loadbalancer.server.port=80
     networks:
       - proxynet
@@ -453,13 +467,14 @@ services:
         condition: service_healthy
         required: false
     environment:
-      ADMINER_DEFAULT_SERVER: ${ADMINER_DEFAULT_SERVER}
+      ADMINER_DEFAULT_SERVER: ${ADMINER_DEFAULT_SERVER:-}
     labels:
       - traefik.enable=true
       - traefik.docker.network=proxynet
       - traefik.http.routers.adminer.rule=Host(`adminer.${DOMAIN}`)
       - traefik.http.routers.adminer.entrypoints=websecure
-      - traefik.http.routers.adminer.tls.certresolver=letsencrypt
+      - traefik.http.routers.adminer.tls=true
+      - traefik.http.routers.adminer.tls.certresolver=${TRAEFIK_CERT_RESOLVER-letsencrypt}
       - traefik.http.services.adminer.loadbalancer.server.port=8080
     networks:
       - proxynet

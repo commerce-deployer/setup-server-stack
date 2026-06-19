@@ -70,6 +70,46 @@ expect_ok "tls: valid domain and email" bash -c '
   validate_tls_domain_config
 '
 
+expect_ok "tls: selfsigned does not require ACME_EMAIL" bash -c '
+  export ENABLE_TRAEFIK=1 DOMAIN=ci.stack.test ACME_EMAIL= TRAEFIK_CERT_MODE=selfsigned
+  export VERSION=ci-test SCRIPT_DIR="'"$ROOT"'"
+  source "'"$LIB"'"
+  validate_tls_domain_config
+'
+
+expect_fail "tls: invalid cert mode" bash -c '
+  export ENABLE_TRAEFIK=1 DOMAIN=ci.stack.test ACME_EMAIL=ci@stack.test TRAEFIK_CERT_MODE=invalid
+  export VERSION=ci-test SCRIPT_DIR="'"$ROOT"'"
+  source "'"$LIB"'"
+  validate_tls_domain_config
+'
+
+staging_ca="$(bash -c '
+  export TRAEFIK_CERT_MODE=staging STACK_ROOT=/tmp/setup-server-stack-ci
+  export VERSION=ci-test SCRIPT_DIR="'"$ROOT"'"
+  source "'"$LIB"'"
+  configure_traefik_cert_mode
+  printf "%s" "$TRAEFIK_ACME_CA_SERVER"
+')"
+if [[ "$staging_ca" == "https://acme-staging-v02.api.letsencrypt.org/directory" ]]; then
+  pass "tls: staging mode uses Let's Encrypt staging CA"
+else
+  fail "tls: expected staging CA got $staging_ca"
+fi
+
+staging_storage="$(bash -c '
+  export TRAEFIK_CERT_MODE=staging STACK_ROOT=/tmp/setup-server-stack-ci
+  export VERSION=ci-test SCRIPT_DIR="'"$ROOT"'"
+  source "'"$LIB"'"
+  configure_traefik_cert_mode
+  printf "%s" "$TRAEFIK_ACME_STORAGE_FILE"
+')"
+if [[ "$staging_storage" == "/tmp/setup-server-stack-ci/traefik/acme-staging.json" ]]; then
+  pass "tls: staging mode uses separate ACME storage"
+else
+  fail "tls: expected staging storage got $staging_storage"
+fi
+
 expect_fail "traefik: TRAEFIK=0 with Portainer" bash -c '
   export ENABLE_TRAEFIK=0 ENABLE_PORTAINER=1 ENABLE_WATCHTOWER=0
   export ENABLE_DOKU=0 ENABLE_SEMAPHORE=0 ENABLE_DUPLICATI=0 ENABLE_UPTIME_KUMA=0

@@ -34,7 +34,7 @@
 
 - **Linux** (обычно Ubuntu/Debian) с доступом по **SSH**.
 - **Docker** и **Docker Compose v2** (`docker compose`, не старый `docker-compose` как отдельная команда). При **`INSTALL_DOCKER=1`** в `.env` скрипт **`setup-server-stack.sh`** может поставить Docker Engine с официального репозитория.
-- При **`ENABLE_REGISTRY=1`** (по умолчанию) установщик сам ставит **`gettext-base`** на Debian/Ubuntu, если нет `envsubst` (нужен для `auth_config.yml` registry).
+- При **`ENABLE_REGISTRY=1`** установщик сам ставит **`gettext-base`** на Debian/Ubuntu, если нет `envsubst` (нужен для `auth_config.yml` registry).
 - Установщик рассчитан на запуск **`sudo bash ./setup-server-stack.sh`** из каталога `setup-server-stack` на этом сервере (не на Windows-домашнем ПК как «боевой» хост). Тонкая обёртка **`./install.sh`** вызывает то же самое.
 
 ### 2.2. Домен и DNS (обязательно для нормальных HTTPS-сертификатов)
@@ -125,7 +125,13 @@ nano .env
 | Переменная | Пример | Зачем |
 |------------|--------|--------|
 | `DOMAIN` | `company.ru` | Все поддомены вида `kuma.company.ru` |
-| `ACME_EMAIL` | `you@company.ru` | Let's Encrypt |
+| `ACME_EMAIL` | `you@company.ru` | Let's Encrypt (режимы `letsencrypt` / `staging`) |
+| `STACK_ADMIN_USER` | `admin` | Главный логин админа для сервисов стека |
+| `STACK_ADMIN_EMAIL` | `admin@company.ru` | Главный email для панелей, где вход по email |
+
+Сервисы включаются явно: ставится только то, где есть `ENABLE_*=1`. Если строки `ENABLE_*` нет, это считается `0` — сервис не ставится. `ENABLE_DOCKER_AUTH` по умолчанию повторяет `ENABLE_REGISTRY`, если не задан отдельно.
+
+`.env.example` намеренно сделан как полный QA/example-стек: в нём включены все поддерживаемые сервисы. Для продакшена оставьте только нужные строки `ENABLE_*=1`.
 
 Остальное можно оставить как в примере; **пустые пароли** скрипт при первом запуске **сам допишет** в файл **`.secrets`** (см. ниже).
 
@@ -134,11 +140,28 @@ nano .env
 ```env
 DOMAIN=company.ru
 ACME_EMAIL=admin@company.ru
+STACK_ADMIN_USER=admin
+STACK_ADMIN_EMAIL=admin@company.ru
+TRAEFIK_CERT_MODE=letsencrypt
 STACK_ROOT=.
 TZ=Europe/Helsinki
 ```
 
 `STACK_ROOT=.` означает: данные (сертификаты, конфиги) лежат **рядом** с `docker-compose.yml` внутри `setup-server-stack`. Можно указать абсолютный путь, например `/opt/setup-server-stack-data`.
+
+**Режимы TLS-сертификатов:**
+
+| `TRAEFIK_CERT_MODE` | Для чего | Что увидит браузер |
+|---------------------|----------|--------------------|
+| `letsencrypt` | Продакшен | Доверенный сертификат, если DNS/порты/лимиты в порядке |
+| `staging` | Частые QA-переустановки | Предупреждение браузера ожидаемо |
+| `selfsigned` | QA без запросов в Let's Encrypt | Предупреждение браузера ожидаемо |
+
+`ACME_EMAIL` обязателен для `letsencrypt` и `staging`; в `selfsigned` установщик не обращается в Let's Encrypt.
+
+Production и staging ACME-хранилища разделены (`acme.json` / `acme-staging.json`), поэтому QA-сертификаты не загрязняют боевую проверку.
+
+После `docker compose up` установщик проверяет каждый включённый HTTPS-host и печатает `TLS OK` или `TLS WARN`. Это важно: Let's Encrypt может успеть выпустить сертификаты для части поддоменов, а потом отказать остальным из-за DNS, портов или лимитов.
 
 ### Шаг 4. Сделать скрипт исполняемым и запустить установку
 
@@ -152,12 +175,13 @@ sudo bash ./setup-server-stack.sh
 - создаст сеть Docker **`proxynet`** (если её нет);
 - создаст каталоги под `traefik/acme.json`, ключи registry, конфиги;
 - сгенерирует **случайные пароли** там, где в `.env` они пустые, и запишет их в **`.secrets`**;
-- подготовит **Traefik** basic-auth: `config/traefik/htpasswd` (dashboard) и `config/traefik/htpasswd-doku` (**Doku**); пароли в `.secrets` — `TRAEFIK_DASHBOARD_PASSWORD` и `DOKU_DASHBOARD_PASSWORD` (в `.env` их не дублируйте);
+- подготовит **Traefik** basic-auth: `config/traefik/htpasswd` (dashboard) и `config/traefik/htpasswd-doku` (**Doku**); логин Doku по умолчанию — `STACK_ADMIN_USER`, пароль — `DOKU_DASHBOARD_PASSWORD` в `.secrets` (в `.env` пароль не дублируйте);
 - сгенерирует **ключи JWT** для Registry / Registry auth;
 - соберёт **`auth_config.yml`** из шаблона;
 - соберёт **`config/docker/config.json`** для Watchtower (чтобы тянуть образы с вашего registry);
 - сгенерирует **`$STACK_ROOT/.env.stack`** (один файл для `docker compose --env-file`, chmod 600);
-- выполнит **`docker compose --env-file .env.stack up -d`** (путь к `.env.stack` — в **`$STACK_ROOT`**).
+- выполнит **`docker compose --env-file .env.stack up -d`** (путь к `.env.stack` — в **`$STACK_ROOT`**);
+- проверит TLS-сертификаты по каждому включённому HTTPS-host и явно напишет `TLS OK` / `TLS WARN`.
 
 В конце скрипт выведет список **HTTPS URL**.
 
@@ -184,7 +208,7 @@ cat .secrets
 Там, например:
 
 - `TRAEFIK_DASHBOARD_PASSWORD` — вход в **dashboard Traefik**;
-- `REGISTRY_PASSWORD` — admin push/pull (`REGISTRY_USER`, по умолчанию `registryadmin`);
+- `REGISTRY_PASSWORD` — admin push/pull (`STACK_ADMIN_USER`; `REGISTRY_USER` можно задать отдельно как override);
 - `REGISTRY_PULL_PASSWORD` — read-only pull (`REGISTRY_PULL_USER`, по умолчанию `registrypull`);
 - `SEMAPHORE_ADMIN_PASSWORD`, `SEMAPHORE_ACCESS_KEY_ENCRYPTION` — для Semaphore;
 - при включённых БД — пароли Mongo/Postgres/MariaDB/MySQL и веб-морд.
@@ -200,8 +224,9 @@ cat .secrets
 | Нет сети `proxynet` | Сеть создана |
 | Нет `acme.json` или пустой | Файл создан, права 600; позже LE заполнит сертификаты |
 | Нет `.secrets` | Появился с паролями |
-| Нет `htpasswd` / `htpasswd-doku` | Появились (Traefik UI: **admin**; Doku: **doku**) |
+| Нет `htpasswd` / `htpasswd-doku` | Появились (Traefik UI: **admin**; Doku: **`STACK_ADMIN_USER`**) |
 | Контейнеры не запущены | `docker compose --env-file .env.stack up -d` — сервисы работают |
+| Непонятно, выпустился ли TLS | В выводе есть диагностика `TLS OK` / `TLS WARN` по каждому HTTPS-host |
 
 Проверка контейнеров (при **`STACK_ROOT=.`** файл `.env.stack` в текущем каталоге; иначе укажите **`$STACK_ROOT/.env.stack`**):
 
@@ -230,16 +255,16 @@ docker compose -f docker-compose.yml --env-file .env.stack ps
 | Сервис | Адрес | Как зайти (логин / пароль) |
 |--------|-------|----------------------------|
 | Traefik dashboard | `https://traefik.company.ru` | Логин **`admin`**, пароль **`TRAEFIK_DASHBOARD_PASSWORD`** из `.secrets` |
-| Registry | `https://registry.company.ru` | **`docker login`**: push — **`REGISTRY_USER`** / **`REGISTRY_PASSWORD`**; pull-only — **`REGISTRY_PULL_USER`** / **`REGISTRY_PULL_PASSWORD`** (см. `.secrets`) |
-| Portainer | `https://portainer.company.ru` | **Первый заход** — мастер создаёт админа в браузере |
-| Semaphore | `https://semaphore.company.ru` | **`SEMAPHORE_ADMIN`** и пароль из `.env` / `.secrets` |
-| Doku | `https://doku.company.ru` | **Basic Auth в Traefik:** логин **`doku`**, пароль **`DOKU_DASHBOARD_PASSWORD`** в `.secrets`; файл `config/traefik/htpasswd-doku` создаёт `setup-server-stack.sh` |
-| Duplicati | `https://duplicati.company.ru` | **Первый заход** — пароль в UI; задания бэкапа настраиваются в UI (§8) |
-| Uptime Kuma | `https://kuma.company.ru` | **Первый заход** — создаёте админа в UI |
-| Filebrowser | `https://filebrowser.company.ru` | Логин **`admin`**, первичный пароль в `docker logs filebrowser`; каталог на хосте — `FILEBROWSER_ROOT_PATH` (пусто = `$STACK_ROOT/filebrowser/files`) |
+| Registry | `https://registry.company.ru` | **`docker login`**: push — **`STACK_ADMIN_USER`** / **`REGISTRY_PASSWORD`**; pull-only — **`REGISTRY_PULL_USER`** / **`REGISTRY_PULL_PASSWORD`** (см. `.secrets`) |
+| Portainer | `https://portainer.company.ru` | **Первый заход** — мастер создаёт админа в браузере; marker в secrets: `PORTAINER_ADMIN_PASSWORD=SET_ON_FIRST_LOGIN` |
+| Semaphore | `https://semaphore.company.ru` | **`STACK_ADMIN_USER`** и пароль **`SEMAPHORE_ADMIN_PASSWORD`** из `.secrets` |
+| Doku | `https://doku.company.ru` | **Basic Auth в Traefik:** логин **`STACK_ADMIN_USER`**, пароль **`DOKU_DASHBOARD_PASSWORD`** в `.secrets`; файл `config/traefik/htpasswd-doku` создаёт `setup-server-stack.sh` |
+| Duplicati | `https://duplicati.company.ru` | Пароль **`DUPLICATI_WEBSERVICE_PASSWORD`** из secrets; задания бэкапа настраиваются в UI (§8) |
+| Uptime Kuma | `https://kuma.company.ru` | **Первый заход** — создаёте админа в UI; marker в secrets: `UPTIME_KUMA_ADMIN_PASSWORD=SET_ON_FIRST_LOGIN` |
+| Filebrowser | `https://filebrowser.company.ru` | Логин **`STACK_ADMIN_USER`**, пароль **`FILEBROWSER_PASSWORD`** в `.secrets`; каталог на хосте — `FILEBROWSER_ROOT_PATH` (пусто = `$STACK_ROOT/filebrowser/files`) |
+| Deployer (если включён) | `https://deployer.company.ru` | Логин **`STACK_ADMIN_USER`**, пароль **`DEPLOYER_ADMIN_PASSWORD`** |
 
 **Filebrowser:** по умолчанию открыт только каталог `$STACK_ROOT/filebrowser/files`, не весь сервер. `FILEBROWSER_ROOT_PATH=/` монтирует весь хост (rw) — на проде не используйте. См. [SECURITY.ru.md](SECURITY.ru.md#веб-панели-край-https).
-| Deployer (если включён) | `https://deployer.company.ru` | Логин/пароль из `DEPLOYER_ADMIN_USER` / `DEPLOYER_ADMIN_PASSWORD` |
 
 Поддомен **`registry-auth.company.ru`** — сервис **Registry auth** (технический endpoint протокола Docker, работает на `docker_auth`; не «панель для людей»).
 
@@ -314,7 +339,7 @@ docker login registry.company.ru
 docker push registry.company.ru/my-app:latest
 ```
 
-Логин и пароль для **push** — **`REGISTRY_USER`** / **`REGISTRY_PASSWORD`**. Для клиентов только с pull — **`REGISTRY_PULL_USER`** / **`REGISTRY_PULL_PASSWORD`** (Watchtower на сервере использует pull-аккаунт).
+Логин и пароль для **push** — **`STACK_ADMIN_USER`** / **`REGISTRY_PASSWORD`** (`REGISTRY_USER` можно задать отдельно как override). Для клиентов только с pull — **`REGISTRY_PULL_USER`** / **`REGISTRY_PULL_PASSWORD`** (Watchtower на сервере использует pull-аккаунт).
 
 ### Автозаливка списка образов при установке стека
 
@@ -382,7 +407,7 @@ DEPLOYER_IMAGE=docker.io/commercedeployer/deployer:latest
 - **Назначение** — S3, Backblaze, SFTP, другой сервер и т.д.
 - **Расписание** — когда запускать job
 
-После установки откройте `https://duplicati.${DOMAIN}`, задайте пароль и создайте задание в UI.
+После установки откройте `https://duplicati.${DOMAIN}`, войдите с паролем `DUPLICATI_WEBSERVICE_PASSWORD` из secrets и создайте задание в UI.
 
 По умолчанию Duplicati видит только свой `/config` внутри контейнера. Чтобы бэкапить данные стека (`${STACK_ROOT}`, именованные тома Docker), добавьте **read-only** bind mount в сервис `duplicati` в `docker-compose.yml` (примеры в комментариях к сервису), затем `docker compose ... up -d`. Пути должны быть читаемы для `DUP_PUID` / `DUP_PGID` (по умолчанию `1000`).
 
@@ -405,13 +430,13 @@ bash tests/run-ci.sh
 
 | Переменная | Значение | Что делает |
 |------------|----------|------------|
-| `CREATE_ADMIN_USER` | `1` | Создаёт главного пользователя `ADMIN_USERNAME` (sudo + docker) |
+| `CREATE_ADMIN_USER` | `1` | Создаёт главного пользователя `STACK_ADMIN_USER` (sudo + docker); `ADMIN_USERNAME` может переопределить его |
 | `ADMIN_SUDO_NOPASSWD` | `1` | Даёт `NOPASSWD` через `/etc/sudoers.d` для этого пользователя |
 | `APPLY_SSH_HARDENING` | `1` | Отключает root/password login в SSH (только по ключу) |
 | `UFW_ENABLE` | `1` | Открывает `SSH_PORT`, 80, 443 и включает UFW (с fallback на iptables-legacy) |
 | `INSTALL_FAIL2BAN` | `1` | На Debian/Ubuntu ставит fail2ban через apt |
 | `INSTALL_UNATTENDED_UPGRADES` | `1` | Включает автоматические security-обновления |
-| `SSH_PUBLIC_KEY` | `ssh-ed25519 AAAA...` | Ключ для `ADMIN_USERNAME` и безопасного SSH-hardening |
+| `SSH_PUBLIC_KEY` | `ssh-ed25519 AAAA...` | Ключ для `STACK_ADMIN_USER` / `ADMIN_USERNAME` и безопасного SSH-hardening |
 
 ---
 
@@ -419,7 +444,7 @@ bash tests/run-ci.sh
 
 1. **Нет зелёного замочка в браузере** — подождите DNS, проверьте `ACME_EMAIL` и что порты 80/443 доступны с интернета.
 2. **502 / нет ответа** — `docker compose ... ps` и `docker logs имя-контейнера`.
-3. **Не пускает в registry** — проверьте `REGISTRY_USER` / `REGISTRY_PASSWORD` в `.env` и `.secrets`; перезапустите `sudo bash ./setup-server-stack.sh`. Убедитесь, что `config/docker_auth/auth_config.yml` и ключи в `certs/` согласованы (генерируются скриптом). Клиент: `docker login registry.${DOMAIN}`.
+3. **Не пускает в registry** — проверьте `STACK_ADMIN_USER` / `REGISTRY_PASSWORD` в `.env` и `.secrets`; перезапустите `sudo bash ./setup-server-stack.sh`. Убедитесь, что `config/docker_auth/auth_config.yml` и ключи в `certs/` согласованы (генерируются скриптом). Клиент: `docker login registry.${DOMAIN}`.
 4. **Забыли пароль Traefik или Doku** — смотрите `.secrets` (`TRAEFIK_DASHBOARD_PASSWORD`, `DOKU_DASHBOARD_PASSWORD`) или пересоздайте соответствующий `htpasswd*` через `sudo bash ./setup-server-stack.sh --force-secrets` (осторожно: пересоздаст и другие секреты).
 
 ---
