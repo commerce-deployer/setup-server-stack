@@ -185,7 +185,7 @@ ENABLE_NGINX=1
 # NGINX_HOST=www.company.ru  # опционально; пусто = DOMAIN
 ```
 
-Рабочие файлы сайта всегда лежат в `${STACK_ROOT}/nginx/public/`. Только при первом запуске, когда эта runtime-папка пустая, установщик копирует стартовое содержимое из `setup-server-stack/public/`. При повторном запуске, если в папке уже есть хотя бы один файл, установщик оставляет сайт как есть и ничего не перезаписывает.
+Рабочие файлы сайта всегда лежат в `${STACK_ROOT}/nginx/public/`. В репозитории стартовая страница лежит в `setup-server-stack/nginx/public/`; только при первом запуске, когда runtime-папка пустая, она используется как сид. При повторном запуске, если в папке уже есть хотя бы один файл, установщик оставляет сайт как есть и ничего не перезаписывает.
 
 ### Шаг 4. Сделать скрипт исполняемым и запустить установку
 
@@ -203,7 +203,7 @@ sudo bash ./setup-server-stack.sh
 - сгенерирует **ключи JWT** для Registry / Registry auth;
 - соберёт **`auth_config.yml`** из шаблона;
 - соберёт **`config/docker/config.json`** для Watchtower (чтобы тянуть образы с вашего registry);
-- инициализирует `$STACK_ROOT/nginx/public` из `public/` только если `ENABLE_NGINX=1` и runtime-папка пустая;
+- инициализирует `$STACK_ROOT/nginx/public` из `nginx/public/` только если `ENABLE_NGINX=1` и runtime-папка пустая;
 - сгенерирует **`$STACK_ROOT/.env.stack`** (один файл для `docker compose --env-file`, chmod 600);
 - выполнит **`docker compose --env-file .env.stack up -d`** (путь к `.env.stack` — в **`$STACK_ROOT`**);
 - проверит TLS-сертификаты по каждому включённому HTTPS-host и явно напишет `TLS OK` / `TLS WARN`.
@@ -357,7 +357,7 @@ docker compose --env-file .env.stack -f docker-compose.yml up -d
 docker compose --env-file .env.stack -f docker-compose.yml down
 ```
 
-(Тома с данными **не** удаляются, если не указать `-v`.)
+(Данные в безопасности: они лежат в bind-монтах `${STACK_ROOT}/<service>`, поэтому `down` — даже с `-v` — их не удаляет.)
 
 ### Залить образ в свой registry с ноутбука
 
@@ -429,7 +429,7 @@ DEPLOYER_IMAGE=commercedeployer/deployer:latest
 
 ### Duplicati (бэкапы)
 
-Стек поднимает **веб-UI Duplicati** и хранит его настройки в Docker-томе `duplicati_config`. **Задания бэкапа** установщик не создаёт:
+Стек поднимает **веб-UI Duplicati** и хранит его настройки в `${STACK_ROOT}/duplicati`. **Задания бэкапа** установщик не создаёт:
 
 - **Источник** — какие файлы или тома копировать
 - **Назначение** — S3, Backblaze, SFTP, другой сервер и т.д.
@@ -437,7 +437,7 @@ DEPLOYER_IMAGE=commercedeployer/deployer:latest
 
 После установки откройте `https://duplicati.${DOMAIN}`, войдите с паролем `DUPLICATI_WEBSERVICE_PASSWORD` из secrets и создайте задание в UI.
 
-По умолчанию Duplicati видит только свой `/config` внутри контейнера. Чтобы бэкапить данные стека (`${STACK_ROOT}`, именованные тома Docker), добавьте **read-only** bind mount в сервис `duplicati` в `docker-compose.yml` (примеры в комментариях к сервису), затем `docker compose ... up -d`. Пути должны быть читаемы для `DUP_PUID` / `DUP_PGID` (по умолчанию `1000`).
+По умолчанию Duplicati видит только свой `/config` внутри контейнера. Так как все данные стека лежат под `${STACK_ROOT}`, достаточно одного **read-only** bind mount `${STACK_ROOT}` в сервис `duplicati` в `docker-compose.yml` (пример в комментарии к сервису), затем `docker compose ... up -d`. Пути должны быть читаемы для `DUP_PUID` / `DUP_PGID` (по умолчанию `1000`).
 
 ### Проверить конфиг compose без запуска
 
@@ -498,10 +498,13 @@ docker compose --env-file .env.stack -f docker-compose.yml restart traefik
 | `${STACK_ROOT}/nginx/public/` | Файлы статического сайта, который отдаёт NGINX при `ENABLE_NGINX=1` |
 | `${STACK_ROOT}/config/traefik/htpasswd*` | Basic Auth Traefik / Doku |
 | `${STACK_ROOT}/config/pgadmin/` | Автоподключение pgAdmin (если включён) |
+| `${STACK_ROOT}/<service>/` | Постоянные данные сервисов (bind-монты): `registry`, `portainer`, `semaphore`, `duplicati`, `kuma`, `pgadmin`, `postgres`, `mongo`, `mariadb`, `mysql` |
+
+Всё постоянное состояние лежит под `${STACK_ROOT}` как bind-монты (без Docker named volumes), поэтому одна копия `${STACK_ROOT}` — это полный бэкап стека. Установщик создаёт каталог `${STACK_ROOT}/<service>` только для включённых сервисов и при необходимости выставляет владельца (pgAdmin `5050:5050`, Semaphore `1001:0`). Чтобы увести данные одного сервиса (например, БД на отдельный диск), задайте `<SERVICE>_DATA_PATH` в `.env` (см. раздел `[M]` в `.env.example`); путь вне `${STACK_ROOT}` тоже работает, и Windows-деплой его не трогает (он пишет только внутрь `${STACK_ROOT}`), но он не попадёт в бэкап «копией одной папки `${STACK_ROOT}`» — такой путь бэкапьте отдельно.
 
 **Watchtower** не обновляет Traefik и СУБД (`watchtower.enable=false`). Остальные сервисы — по `WATCHTOWER_SCHEDULE`.
 
-**Duplicati:** из compose — только UI и том `duplicati_config`; источники, хранилище и расписание — в UI Duplicati (§8).
+**Duplicati:** из compose — только UI и данные в `${STACK_ROOT}/duplicati`; источники, хранилище и расписание — в UI Duplicati (§8).
 
 **Доступ к БД с другого VPS:** предпочтительно HTTPS API на этом хосте; если нужен прямой доступ — UFW только с IP приложения; для админа — веб-морды или SSH-туннель (`ssh -N -L 27018:127.0.0.1:27017 user@vps`).
 

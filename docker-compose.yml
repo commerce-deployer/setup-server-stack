@@ -1,6 +1,7 @@
 # Setup Server Stack (Traefik 3.6, Registry + Registry auth, Portainer, Watchtower, Semaphore, Doku, Duplicati, Kuma, Filebrowser, NGINX static site).
 # Optional DBs and DB UIs: use COMPOSE_PROFILES or `docker compose --profile <name>`.
 # Run: sudo bash setup-server-stack.sh — writes $STACK_ROOT/.env.stack for docker compose.
+# All persistent data lives under $STACK_ROOT/<service> (bind mounts), so one folder = full backup.
 
 name: setup-server-stack
 
@@ -77,7 +78,7 @@ services:
       REGISTRY_AUTH_TOKEN_ISSUER: ${REGISTRY_AUTH_TOKEN_ISSUER}
       REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE: /certs/registry-token.pem
     volumes:
-      - registry_data:/var/lib/registry
+      - ${REGISTRY_DATA_PATH:-${STACK_ROOT}/registry}:/var/lib/registry
       - ${STACK_ROOT}/certs/registry-token.pem:/certs/registry-token.pem:ro
     labels:
       - traefik.enable=true
@@ -120,7 +121,7 @@ services:
       - no-new-privileges:true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - portainer_data:/data
+      - ${PORTAINER_DATA_PATH:-${STACK_ROOT}/portainer}:/data
     labels:
       - traefik.enable=true
       - traefik.docker.network=proxynet
@@ -163,7 +164,7 @@ services:
       SEMAPHORE_ADMIN_NAME: ${SEMAPHORE_ADMIN_NAME:-Admin}
       SEMAPHORE_ADMIN_EMAIL: ${SEMAPHORE_ADMIN_EMAIL:-admin@example.com}
     volumes:
-      - semaphore_data:/var/lib/semaphore
+      - ${SEMAPHORE_DATA_PATH:-${STACK_ROOT}/semaphore}:/var/lib/semaphore
     labels:
       - traefik.enable=true
       - traefik.docker.network=proxynet
@@ -197,9 +198,8 @@ services:
       - proxynet
 
   # Duplicati — backup UI only; job sources/destinations are configured in the web UI.
-  # To back up host paths, add bind mounts (read-only recommended), e.g.:
+  # All stack data lives under ${STACK_ROOT}, so one read-only mount backs up everything:
   #   - ${STACK_ROOT}:/source/stack:ro
-  #   - /var/lib/docker/volumes:/source/docker-volumes:ro
   duplicati:
     profiles: [duplicati]
     image: ${DUPLICATI_IMAGE:-linuxserver/duplicati:latest}
@@ -212,7 +212,7 @@ services:
       SETTINGS_ENCRYPTION_KEY: ${DUPLICATI_SETTINGS_ENCRYPTION_KEY:-}
       DUPLICATI__WEBSERVICE_PASSWORD: ${DUPLICATI_WEBSERVICE_PASSWORD:-}
     volumes:
-      - duplicati_config:/config
+      - ${DUPLICATI_DATA_PATH:-${STACK_ROOT}/duplicati}:/config
     labels:
       - traefik.enable=true
       - traefik.docker.network=proxynet
@@ -230,7 +230,7 @@ services:
     container_name: uptime-kuma
     restart: unless-stopped
     volumes:
-      - kuma_data:/app/data
+      - ${KUMA_DATA_PATH:-${STACK_ROOT}/kuma}:/app/data
     labels:
       - traefik.enable=true
       - traefik.docker.network=proxynet
@@ -249,10 +249,10 @@ services:
     container_name: filebrowser
     restart: unless-stopped
     environment:
-      PUID: ${FILEBROWSER_PUID:-1000}
-      PGID: ${FILEBROWSER_PGID:-1000}
+      PUID: ${FILEBROWSER_PUID:-0}
+      PGID: ${FILEBROWSER_PGID:-0}
     volumes:
-      - ${FILEBROWSER_ROOT_PATH:-${STACK_ROOT}/filebrowser/files}:/srv
+      - ${FILEBROWSER_ROOT_PATH:-/opt}:/srv
       - ${STACK_ROOT}/filebrowser/database:/database
       - ${STACK_ROOT}/filebrowser/config:/config
     labels:
@@ -335,7 +335,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-mongoadmin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-}
     volumes:
-      - mongo_data:/data/db
+      - ${MONGO_DATA_PATH:-${STACK_ROOT}/mongo}:/data/db
     healthcheck:
       test:
         [
@@ -361,11 +361,11 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
-      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ${POSTGRES_DATA_PATH:-${STACK_ROOT}/postgres}:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$${POSTGRES_DB:-$$POSTGRES_USER}\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -384,11 +384,11 @@ services:
       - no-new-privileges:true
     environment:
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-}
-      MARIADB_USER: ${MARIADB_USER:-app}
+      MARIADB_USER: ${MARIADB_USER:-}
       MARIADB_PASSWORD: ${MARIADB_PASSWORD:-}
-      MARIADB_DATABASE: ${MARIADB_DATABASE:-app}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-}
     volumes:
-      - mariadb_data:/var/lib/mysql
+      - ${MARIADB_DATA_PATH:-${STACK_ROOT}/mariadb}:/var/lib/mysql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
@@ -409,11 +409,11 @@ services:
       - no-new-privileges:true
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
-      MYSQL_USER: ${MYSQL_USER:-app}
+      MYSQL_USER: ${MYSQL_USER:-}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-app}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-}
     volumes:
-      - mysql_data:/var/lib/mysql
+      - ${MYSQL_DATA_PATH:-${STACK_ROOT}/mysql}:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p$$MYSQL_ROOT_PASSWORD"]
       interval: 10s
@@ -462,7 +462,7 @@ services:
       PGADMIN_CONFIG_SERVER_MODE: "False"
       PGPASS_FILE: /pgpass
     volumes:
-      - pgadmin_data:/var/lib/pgadmin
+      - ${PGADMIN_DATA_PATH:-${STACK_ROOT}/pgadmin}:/var/lib/pgadmin
       - ${STACK_ROOT}/config/pgadmin/servers.json:/pgadmin4/servers.json:ro
       - ${STACK_ROOT}/config/pgadmin/pgpass:/pgpass:ro
     labels:
@@ -503,15 +503,3 @@ services:
       - traefik.http.services.adminer.loadbalancer.server.port=8080
     networks:
       - proxynet
-
-volumes:
-  registry_data:
-  portainer_data:
-  semaphore_data:
-  duplicati_config:
-  kuma_data:
-  mongo_data:
-  postgres_data:
-  mariadb_data:
-  mysql_data:
-  pgadmin_data:

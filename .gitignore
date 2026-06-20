@@ -33,9 +33,19 @@ config/pgadmin/
 # Local Compose overrides (optional)
 docker-compose.override.yml
 
-# Generated runtime data (STACK_ROOT=. on VPS)
+# Generated runtime data (STACK_ROOT=. on VPS) — per-service bind mounts
 traefik/
 filebrowser/
+registry/
+portainer/
+semaphore/
+duplicati/
+kuma/
+pgadmin/
+postgres/
+mongo/
+mariadb/
+mysql/
 
 # IDE / agent (local only)
 .cursor/

@@ -125,8 +125,8 @@ ensure_openssl() {
     export DEBIAN_FRONTEND=noninteractive
     local retries="${REGISTRY_OPERATION_RETRIES:-3}"
     ensure_dns_ready
-    retry_run "$retries" apt-get update -o APT::Update::Error-Mode=any -qq
-    retry_run "$retries" apt-get install -y -qq openssl ca-certificates
+    retry_run "$retries" apt-get -o DPkg::Lock::Timeout=300 update -o APT::Update::Error-Mode=any -qq
+    retry_run "$retries" apt-get -o DPkg::Lock::Timeout=300 install -y -qq openssl ca-certificates
   fi
   command -v openssl &>/dev/null || err "openssl required (apt install openssl)."
 }
@@ -154,9 +154,9 @@ install_docker_engine() {
   export DEBIAN_FRONTEND=noninteractive
   local retries="${REGISTRY_OPERATION_RETRIES:-3}"
   ensure_dns_ready
-  retry_run "$retries" apt-get update -o APT::Update::Error-Mode=any -qq
-  RUN apt-get remove -y docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc 2>/dev/null || true
-  retry_run "$retries" apt-get install -y -qq ca-certificates curl gnupg
+  retry_run "$retries" apt-get -o DPkg::Lock::Timeout=300 update -o APT::Update::Error-Mode=any -qq
+  RUN apt-get -o DPkg::Lock::Timeout=300 remove -y docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc 2>/dev/null || true
+  retry_run "$retries" apt-get -o DPkg::Lock::Timeout=300 install -y -qq ca-certificates curl gnupg
   RUN install -m 0755 -d /etc/apt/keyrings
   retry_run "$retries" curl -fsSL --retry 3 --retry-delay 5 --retry-connrefused "https://download.docker.com/linux/${id}/gpg" -o /etc/apt/keyrings/docker.asc
   RUN chmod a+r /etc/apt/keyrings/docker.asc
@@ -164,8 +164,8 @@ install_docker_engine() {
   arch="$(dpkg --print-architecture)"
   echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${id} ${version_codename} stable" |
     RUN tee /etc/apt/sources.list.d/docker.list >/dev/null
-  retry_run "$retries" apt-get update -o APT::Update::Error-Mode=any -qq
-  retry_run "$retries" apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  retry_run "$retries" apt-get -o DPkg::Lock::Timeout=300 update -o APT::Update::Error-Mode=any -qq
+  retry_run "$retries" apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   if start_docker_service; then
     info "Installed docker-ce and docker compose plugin."
   else

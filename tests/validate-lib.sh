@@ -301,10 +301,10 @@ SECRETS
 
 expect_ok "nginx: seed initializes empty runtime public dir" bash -c '
   rm -rf /tmp/setup-server-stack-ci-nginx
-  mkdir -p /tmp/setup-server-stack-ci-nginx/script/public
+  mkdir -p /tmp/setup-server-stack-ci-nginx/script/nginx/public
   mkdir -p /tmp/setup-server-stack-ci-nginx/script/lib
   touch /tmp/setup-server-stack-ci-nginx/script/lib/docker-install.inc.sh
-  printf "seed page" > /tmp/setup-server-stack-ci-nginx/script/public/index.html
+  printf "seed page" > /tmp/setup-server-stack-ci-nginx/script/nginx/public/index.html
   export ENABLE_NGINX=1 STACK_ROOT=/tmp/setup-server-stack-ci-nginx/runtime
   export VERSION=ci-test SCRIPT_DIR=/tmp/setup-server-stack-ci-nginx/script
   source "'"$LIB"'"
@@ -314,17 +314,45 @@ expect_ok "nginx: seed initializes empty runtime public dir" bash -c '
 
 expect_ok "nginx: seed keeps existing runtime site" bash -c '
   rm -rf /tmp/setup-server-stack-ci-nginx-existing
-  mkdir -p /tmp/setup-server-stack-ci-nginx-existing/script/public
+  mkdir -p /tmp/setup-server-stack-ci-nginx-existing/script/nginx/public
   mkdir -p /tmp/setup-server-stack-ci-nginx-existing/script/lib
   touch /tmp/setup-server-stack-ci-nginx-existing/script/lib/docker-install.inc.sh
   mkdir -p /tmp/setup-server-stack-ci-nginx-existing/runtime/nginx/public
-  printf "seed page" > /tmp/setup-server-stack-ci-nginx-existing/script/public/index.html
+  printf "seed page" > /tmp/setup-server-stack-ci-nginx-existing/script/nginx/public/index.html
   printf "user site" > /tmp/setup-server-stack-ci-nginx-existing/runtime/nginx/public/index.html
   export ENABLE_NGINX=1 STACK_ROOT=/tmp/setup-server-stack-ci-nginx-existing/runtime
   export VERSION=ci-test SCRIPT_DIR=/tmp/setup-server-stack-ci-nginx-existing/script
   source "'"$LIB"'"
   initialize_nginx_public_dir >/dev/null
   grep -q "user site" /tmp/setup-server-stack-ci-nginx-existing/runtime/nginx/public/index.html
+'
+
+expect_ok "data dirs: created only for enabled services" bash -c '
+  rm -rf /tmp/setup-server-stack-ci-data
+  export STACK_ROOT=/tmp/setup-server-stack-ci-data
+  export VERSION=ci-test SCRIPT_DIR="'"$ROOT"'"
+  export ENABLE_POSTGRES=1 ENABLE_PGADMIN=1 ENABLE_SEMAPHORE=1
+  export ENABLE_MONGO=0 ENABLE_MYSQL=0 ENABLE_REGISTRY=0
+  source "'"$LIB"'"
+  ensure_service_data_dirs
+  test -d /tmp/setup-server-stack-ci-data/postgres
+  test -d /tmp/setup-server-stack-ci-data/pgadmin
+  test -d /tmp/setup-server-stack-ci-data/semaphore
+  test ! -d /tmp/setup-server-stack-ci-data/mongo
+'
+
+# shellcheck disable=SC2016
+expect_ok "data dirs: POSTGRES_DATA_PATH override is honored" bash -c '
+  rm -rf /tmp/setup-server-stack-ci-data-ovr
+  export STACK_ROOT=/tmp/setup-server-stack-ci-data-ovr/root
+  export POSTGRES_DATA_PATH=/tmp/setup-server-stack-ci-data-ovr/disk/pg
+  export VERSION=ci-test SCRIPT_DIR="'"$ROOT"'"
+  export ENABLE_POSTGRES=1
+  source "'"$LIB"'"
+  test "$(svc_data_path postgres)" = "/tmp/setup-server-stack-ci-data-ovr/disk/pg"
+  ensure_service_data_dirs
+  test -d /tmp/setup-server-stack-ci-data-ovr/disk/pg
+  test ! -d /tmp/setup-server-stack-ci-data-ovr/root/postgres
 '
 
 expect_fail "traefik: TRAEFIK=0 with Portainer" bash -c '
@@ -377,6 +405,36 @@ expect_ok "enable: pgAdmin with Postgres" bash -c '
   validate_enable_flags
 '
 
+expect_fail "db: MariaDB user without database" bash -c '
+  export ENABLE_TRAEFIK=1 DOMAIN=ci.stack.test ACME_EMAIL=ci@stack.test
+  export ENABLE_MARIADB=1 MARIADB_USER=app MARIADB_DATABASE=
+  export EXTRA_REGISTRY_COUNT=0 REGISTRY_OPERATION_RETRIES=3
+  export REGISTRY_RETRY_BACKOFF_BASE_SEC=2 REGISTRY_RETRY_BACKOFF_MAX_SEC=10
+  export VERSION=ci-test SCRIPT_DIR="'"$ROOT"'"
+  source "'"$LIB"'"
+  validate_enable_flags
+'
+
+expect_ok "db: MariaDB root-only (no user, no database)" bash -c '
+  export ENABLE_TRAEFIK=1 DOMAIN=ci.stack.test ACME_EMAIL=ci@stack.test
+  export ENABLE_MARIADB=1 MARIADB_USER= MARIADB_DATABASE=
+  export EXTRA_REGISTRY_COUNT=0 REGISTRY_OPERATION_RETRIES=3
+  export REGISTRY_RETRY_BACKOFF_BASE_SEC=2 REGISTRY_RETRY_BACKOFF_MAX_SEC=10
+  export VERSION=ci-test SCRIPT_DIR="'"$ROOT"'"
+  source "'"$LIB"'"
+  validate_enable_flags
+'
+
+expect_ok "db: MySQL app user with database" bash -c '
+  export ENABLE_TRAEFIK=1 DOMAIN=ci.stack.test ACME_EMAIL=ci@stack.test
+  export ENABLE_MYSQL=1 MYSQL_USER=app MYSQL_DATABASE=app
+  export EXTRA_REGISTRY_COUNT=0 REGISTRY_OPERATION_RETRIES=3
+  export REGISTRY_RETRY_BACKOFF_BASE_SEC=2 REGISTRY_RETRY_BACKOFF_MAX_SEC=10
+  export VERSION=ci-test SCRIPT_DIR="'"$ROOT"'"
+  source "'"$LIB"'"
+  validate_enable_flags
+'
+
 fb_path="$(bash -c '
   export STACK_ROOT=/tmp/setup-server-stack-ci FILEBROWSER_ROOT_PATH=
   export VERSION=ci-test SCRIPT_DIR="'"$ROOT"'"
@@ -384,10 +442,10 @@ fb_path="$(bash -c '
   resolve_filebrowser_root_path
   printf "%s" "$FILEBROWSER_ROOT_PATH"
 ')"
-if [[ "$fb_path" == "/tmp/setup-server-stack-ci/filebrowser/files" ]]; then
-  pass "filebrowser: empty path defaults to STACK_ROOT/filebrowser/files"
+if [[ "$fb_path" == "/opt" ]]; then
+  pass "filebrowser: empty path defaults to /opt"
 else
-  fail "filebrowser: expected /tmp/setup-server-stack-ci/filebrowser/files got $fb_path"
+  fail "filebrowser: expected /opt got $fb_path"
 fi
 
 echo ""

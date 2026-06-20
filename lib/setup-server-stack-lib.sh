@@ -226,8 +226,8 @@ apply_stack_admin_defaults() {
   : "${DEPLOYER_ADMIN_USER:=$STACK_ADMIN_USER}"
   : "${MONGO_ROOT_USER:=$STACK_ADMIN_USER}"
   : "${POSTGRES_USER:=$STACK_ADMIN_USER}"
-  : "${MARIADB_USER:=$STACK_ADMIN_USER}"
-  : "${MYSQL_USER:=$STACK_ADMIN_USER}"
+  # MariaDB/MySQL default to root-only; an app user/db is created only when the
+  # operator sets *_USER together with *_DATABASE (see validate_enable_flags).
   : "${MONGO_EXPRESS_USER:=$STACK_ADMIN_USER}"
   : "${PGADMIN_EMAIL:=$STACK_ADMIN_EMAIL}"
   : "${ADMIN_USERNAME:=$STACK_ADMIN_USER}"
@@ -277,8 +277,49 @@ ensure_dirs() {
     "$STACK_ROOT/filebrowser/database" "$STACK_ROOT/filebrowser/config" \
     "$STACK_ROOT/nginx/public"
   ensure_filebrowser_root_dir
+  ensure_service_data_dirs
   RUN mkdir -p "${DEPLOY_BASE_PATH:-/opt/deploy-data}"
   chmod 700 "$STACK_ROOT/certs" 2>/dev/null || true
+}
+
+# Host path for a service's persistent data. Override with <SERVICE>_DATA_PATH
+# (e.g. POSTGRES_DATA_PATH); default $STACK_ROOT/<service>.
+svc_data_path() {
+  local key="$1" var
+  var="$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')_DATA_PATH"
+  printf '%s\n' "${!var:-$STACK_ROOT/$key}"
+}
+
+# Per-service persistent data as bind mounts (default $STACK_ROOT/<service>), so the
+# whole stack (configs + state + databases) is backed up by copying one folder.
+# Only directories for enabled services are created.
+ensure_service_data_dirs() {
+  local svc flag dir
+  # Containers below fix data-dir ownership themselves (run as root or chown on start).
+  for svc in \
+    "registry:ENABLE_REGISTRY" \
+    "portainer:ENABLE_PORTAINER" \
+    "duplicati:ENABLE_DUPLICATI" \
+    "kuma:ENABLE_UPTIME_KUMA" \
+    "mongo:ENABLE_MONGO" \
+    "postgres:ENABLE_POSTGRES" \
+    "mariadb:ENABLE_MARIADB" \
+    "mysql:ENABLE_MYSQL"; do
+    dir="${svc%%:*}"
+    flag="${svc##*:}"
+    [[ "${!flag:-0}" == "1" ]] && mkdir -p "$(svc_data_path "$dir")"
+  done
+  # These apps run as a fixed non-root uid and need matching ownership on bind mounts.
+  if [[ "${ENABLE_SEMAPHORE:-0}" == "1" ]]; then
+    local sema_dir; sema_dir="$(svc_data_path semaphore)"
+    mkdir -p "$sema_dir"
+    chown -R 1001:0 "$sema_dir" 2>/dev/null || true
+  fi
+  if [[ "${ENABLE_PGADMIN:-0}" == "1" ]]; then
+    local pgadmin_dir; pgadmin_dir="$(svc_data_path pgadmin)"
+    mkdir -p "$pgadmin_dir"
+    chown -R 5050:5050 "$pgadmin_dir" 2>/dev/null || true
+  fi
 }
 
 resolve_nginx_host() {
@@ -298,7 +339,7 @@ initialize_nginx_public_dir() {
 
   local public_dir seed_dir
   public_dir="$(resolve_nginx_public_path)"
-  seed_dir="$SCRIPT_DIR/public"
+  seed_dir="$SCRIPT_DIR/nginx/public"
 
   mkdir -p "$public_dir"
   if find "$public_dir" -mindepth 1 -print -quit | grep -q .; then
@@ -307,10 +348,10 @@ initialize_nginx_public_dir() {
     return 0
   fi
 
-  if [[ -d "$seed_dir" ]]; then
+  if [[ -d "$seed_dir" && "$seed_dir" != "$public_dir" ]]; then
     cp -a "$seed_dir/." "$public_dir/"
     chmod -R u=rwX,go=rX "$public_dir"
-    info "Initialized NGINX public dir with example files from public/: $public_dir"
+    info "Initialized NGINX public dir with example files from nginx/public/: $public_dir"
   else
     cat >"$public_dir/index.html" <<'HTML'
 <!doctype html>
@@ -320,13 +361,15 @@ initialize_nginx_public_dir() {
 </html>
 HTML
     chmod -R u=rwX,go=rX "$public_dir"
-    warn "Missing seed public/index.html; wrote fallback NGINX index.html to $public_dir"
+    warn "Missing seed nginx/public/index.html; wrote fallback NGINX index.html to $public_dir"
   fi
 }
 
 resolve_filebrowser_root_path() {
   if [ -z "${FILEBROWSER_ROOT_PATH:-}" ]; then
-    FILEBROWSER_ROOT_PATH="$STACK_ROOT/filebrowser/files"
+    # Default to /opt so both the stack (/opt/setup-server-stack) and Deployer
+    # data (/opt/deploy-data) are visible under one root.
+    FILEBROWSER_ROOT_PATH="/opt"
   fi
   export FILEBROWSER_ROOT_PATH
 }
@@ -334,9 +377,13 @@ resolve_filebrowser_root_path() {
 ensure_filebrowser_root_dir() {
   [[ "${ENABLE_FILEBROWSER:-0}" == "1" ]] || return 0
   resolve_filebrowser_root_path
+  # /, /opt and the deploy root are shared, root-owned trees: never mkdir/chown them.
+  if [ "$FILEBROWSER_ROOT_PATH" = "/" ] || [ "$FILEBROWSER_ROOT_PATH" = "/opt" ] || [ "$FILEBROWSER_ROOT_PATH" = "$STACK_ROOT" ]; then
+    return 0
+  fi
   RUN mkdir -p "$FILEBROWSER_ROOT_PATH"
-  local puid="${FILEBROWSER_PUID:-1000}"
-  local pgid="${FILEBROWSER_PGID:-1000}"
+  local puid="${FILEBROWSER_PUID:-0}"
+  local pgid="${FILEBROWSER_PGID:-0}"
   RUN chown "$puid:$pgid" "$FILEBROWSER_ROOT_PATH" 2>/dev/null || true
 }
 
@@ -344,7 +391,7 @@ warn_filebrowser_root_path() {
   [[ "${ENABLE_FILEBROWSER:-0}" == "1" ]] || return 0
   resolve_filebrowser_root_path
   if [ "$FILEBROWSER_ROOT_PATH" = "/" ]; then
-    warn "FILEBROWSER_ROOT_PATH=/ exposes the entire host to Filebrowser (rw). Prefer empty (default: \$STACK_ROOT/filebrowser/files) or a dedicated directory."
+    warn "FILEBROWSER_ROOT_PATH=/ exposes the entire host to Filebrowser (rw, runs as root). Use the default /opt (stack + deploy-data), or set a non-root FILEBROWSER_PUID/PGID to limit access."
   fi
 }
 
@@ -402,8 +449,8 @@ ensure_htpasswd() {
     step "Installing apache2-utils (htpasswd)"
     local retries="${REGISTRY_OPERATION_RETRIES:-3}"
     ensure_dns_ready
-    retry_run "$retries" apt-get update -o APT::Update::Error-Mode=any -qq
-    retry_run "$retries" env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq apache2-utils
+    retry_run "$retries" apt-get -o DPkg::Lock::Timeout=300 update -o APT::Update::Error-Mode=any -qq
+    retry_run "$retries" env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq apache2-utils
   fi
   command -v htpasswd &>/dev/null || err "htpasswd required (apt install apache2-utils)."
 }
@@ -414,8 +461,8 @@ ensure_envsubst() {
     step "Installing gettext-base (envsubst for registry auth config)"
     local retries="${REGISTRY_OPERATION_RETRIES:-3}"
     ensure_dns_ready
-    retry_run "$retries" apt-get update -o APT::Update::Error-Mode=any -qq
-    retry_run "$retries" env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gettext-base
+    retry_run "$retries" apt-get -o DPkg::Lock::Timeout=300 update -o APT::Update::Error-Mode=any -qq
+    retry_run "$retries" env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq gettext-base
   fi
   command -v envsubst &>/dev/null || err "envsubst required (apt install gettext-base)."
 }
@@ -670,14 +717,16 @@ write_stack_secrets() {
         changed=1
       fi
     fi
-    if [[ -z "${MARIADB_PASSWORD:-}" ]] || [[ "$FORCE_SECRETS" -eq 1 ]]; then
-      if ! grep -q '^MARIADB_PASSWORD=' "$sec" 2>/dev/null || [[ "$FORCE_SECRETS" -eq 1 ]]; then
-        local mdp
-        mdp=$(rand_hex 24)
-        grep -v '^MARIADB_PASSWORD=' "$sec" >"${sec}.tmp" 2>/dev/null || true
-        mv "${sec}.tmp" "$sec" 2>/dev/null || true
-        echo "MARIADB_PASSWORD=$mdp" >>"$sec"
-        changed=1
+    if [[ -n "${MARIADB_USER:-}" ]]; then
+      if [[ -z "${MARIADB_PASSWORD:-}" ]] || [[ "$FORCE_SECRETS" -eq 1 ]]; then
+        if ! grep -q '^MARIADB_PASSWORD=' "$sec" 2>/dev/null || [[ "$FORCE_SECRETS" -eq 1 ]]; then
+          local mdp
+          mdp=$(rand_hex 24)
+          grep -v '^MARIADB_PASSWORD=' "$sec" >"${sec}.tmp" 2>/dev/null || true
+          mv "${sec}.tmp" "$sec" 2>/dev/null || true
+          echo "MARIADB_PASSWORD=$mdp" >>"$sec"
+          changed=1
+        fi
       fi
     fi
   fi
@@ -693,14 +742,16 @@ write_stack_secrets() {
         changed=1
       fi
     fi
-    if [[ -z "${MYSQL_PASSWORD:-}" ]] || [[ "$FORCE_SECRETS" -eq 1 ]]; then
-      if ! grep -q '^MYSQL_PASSWORD=' "$sec" 2>/dev/null || [[ "$FORCE_SECRETS" -eq 1 ]]; then
-        local mydp
-        mydp=$(rand_hex 24)
-        grep -v '^MYSQL_PASSWORD=' "$sec" >"${sec}.tmp" 2>/dev/null || true
-        mv "${sec}.tmp" "$sec" 2>/dev/null || true
-        echo "MYSQL_PASSWORD=$mydp" >>"$sec"
-        changed=1
+    if [[ -n "${MYSQL_USER:-}" ]]; then
+      if [[ -z "${MYSQL_PASSWORD:-}" ]] || [[ "$FORCE_SECRETS" -eq 1 ]]; then
+        if ! grep -q '^MYSQL_PASSWORD=' "$sec" 2>/dev/null || [[ "$FORCE_SECRETS" -eq 1 ]]; then
+          local mydp
+          mydp=$(rand_hex 24)
+          grep -v '^MYSQL_PASSWORD=' "$sec" >"${sec}.tmp" 2>/dev/null || true
+          mv "${sec}.tmp" "$sec" 2>/dev/null || true
+          echo "MYSQL_PASSWORD=$mydp" >>"$sec"
+          changed=1
+        fi
       fi
     fi
   fi
@@ -808,7 +859,8 @@ render_pgadmin_config() {
   local db_host="${PGADMIN_POSTGRES_HOST:-postgres}"
   local db_port="${PGADMIN_POSTGRES_PORT:-5432}"
   local db_user="${POSTGRES_USER:-app}"
-  local db_name="${POSTGRES_DB:-app}"
+  # Empty POSTGRES_DB means Postgres created a database named after the user.
+  local db_name="${POSTGRES_DB:-$db_user}"
   local db_pass="${POSTGRES_PASSWORD:-}"
   local esc_pass
 
@@ -967,8 +1019,8 @@ write_env_for_compose() {
   : "${MONGO_EXPRESS_IMAGE:=mongo-express:latest}"
   : "${PGADMIN_IMAGE:=dpage/pgadmin4:latest}"
   : "${ADMINER_IMAGE:=adminer:latest}"
-  : "${DEPLOYER_IMAGE_EFFECTIVE:=${DEPLOYER_IMAGE:-}}"
-  : "${DEPLOYER_IMAGE:=}"
+  : "${DEPLOYER_IMAGE:=commercedeployer/deployer:latest}"
+  : "${DEPLOYER_IMAGE_EFFECTIVE:=${DEPLOYER_IMAGE}}"
   : "${DEPLOYER_NODE_ENV:=production}"
   : "${DEPLOYER_AUTH_MODE:=dual}"
   : "${DEPLOY_BASE_PATH:=/opt/deploy-data}"
@@ -1023,11 +1075,32 @@ write_env_for_compose() {
   dapi="$(quote_for_env_stack "${DEPLOYER_API_KEY:-}")"
   drp="$(quote_for_env_stack "${DEPLOYER_REGISTRY_PASSWORD:-}")"
   drcj="$(quote_for_env_stack "${DEPLOYER_REGISTRY_CREDENTIALS_JSON:-[]}")"
+  local p_registry p_portainer p_semaphore p_duplicati p_kuma p_pgadmin p_postgres p_mongo p_mariadb p_mysql
+  p_registry="$(quote_for_env_stack "$(svc_data_path registry)")"
+  p_portainer="$(quote_for_env_stack "$(svc_data_path portainer)")"
+  p_semaphore="$(quote_for_env_stack "$(svc_data_path semaphore)")"
+  p_duplicati="$(quote_for_env_stack "$(svc_data_path duplicati)")"
+  p_kuma="$(quote_for_env_stack "$(svc_data_path kuma)")"
+  p_pgadmin="$(quote_for_env_stack "$(svc_data_path pgadmin)")"
+  p_postgres="$(quote_for_env_stack "$(svc_data_path postgres)")"
+  p_mongo="$(quote_for_env_stack "$(svc_data_path mongo)")"
+  p_mariadb="$(quote_for_env_stack "$(svc_data_path mariadb)")"
+  p_mysql="$(quote_for_env_stack "$(svc_data_path mysql)")"
 
   umask 077
   {
     echo "# Generated by setup-server-stack.sh — do not publish"
     echo "STACK_ROOT=$STACK_ROOT"
+    echo "REGISTRY_DATA_PATH=$p_registry"
+    echo "PORTAINER_DATA_PATH=$p_portainer"
+    echo "SEMAPHORE_DATA_PATH=$p_semaphore"
+    echo "DUPLICATI_DATA_PATH=$p_duplicati"
+    echo "KUMA_DATA_PATH=$p_kuma"
+    echo "PGADMIN_DATA_PATH=$p_pgadmin"
+    echo "POSTGRES_DATA_PATH=$p_postgres"
+    echo "MONGO_DATA_PATH=$p_mongo"
+    echo "MARIADB_DATA_PATH=$p_mariadb"
+    echo "MYSQL_DATA_PATH=$p_mysql"
     echo "DOMAIN=$DOMAIN"
     echo "ACME_EMAIL=$ACME_EMAIL"
     echo "STACK_ADMIN_USER=$STACK_ADMIN_USER"
@@ -1054,8 +1127,8 @@ write_env_for_compose() {
     echo "FILEBROWSER_ROOT_PATH=\"$fbr\""
     echo "FILEBROWSER_USER=${FILEBROWSER_USER:-${STACK_ADMIN_USER:-admin}}"
     echo "FILEBROWSER_PASSWORD=\"$fbp\""
-    echo "FILEBROWSER_PUID=${FILEBROWSER_PUID:-1000}"
-    echo "FILEBROWSER_PGID=${FILEBROWSER_PGID:-1000}"
+    echo "FILEBROWSER_PUID=${FILEBROWSER_PUID:-0}"
+    echo "FILEBROWSER_PGID=${FILEBROWSER_PGID:-0}"
     echo "MONGO_IMAGE=$MONGO_IMAGE"
     echo "POSTGRES_IMAGE=$POSTGRES_IMAGE"
     echo "MARIADB_IMAGE=$MARIADB_IMAGE"
@@ -1115,14 +1188,14 @@ write_env_for_compose() {
     echo "MONGO_ROOT_PASSWORD=\"$mp\""
     echo "POSTGRES_USER=${POSTGRES_USER:-${STACK_ADMIN_USER:-app}}"
     echo "POSTGRES_PASSWORD=\"$pp\""
-    echo "POSTGRES_DB=${POSTGRES_DB:-app}"
-    echo "MARIADB_USER=${MARIADB_USER:-app}"
+    echo "POSTGRES_DB=${POSTGRES_DB:-}"
+    echo "MARIADB_USER=${MARIADB_USER:-}"
     echo "MARIADB_PASSWORD=\"$mdp\""
-    echo "MARIADB_DATABASE=${MARIADB_DATABASE:-app}"
+    echo "MARIADB_DATABASE=${MARIADB_DATABASE:-}"
     echo "MARIADB_ROOT_PASSWORD=\"$mrp\""
-    echo "MYSQL_USER=${MYSQL_USER:-app}"
+    echo "MYSQL_USER=${MYSQL_USER:-}"
     echo "MYSQL_PASSWORD=\"$mydp\""
-    echo "MYSQL_DATABASE=${MYSQL_DATABASE:-app}"
+    echo "MYSQL_DATABASE=${MYSQL_DATABASE:-}"
     echo "MYSQL_ROOT_PASSWORD=\"$myrp\""
     echo "ENABLE_MONGO_EXPRESS=${ENABLE_MONGO_EXPRESS:-0}"
     echo "MONGO_EXPRESS_USER=${MONGO_EXPRESS_USER:-${STACK_ADMIN_USER:-mexpress}}"
@@ -1272,8 +1345,7 @@ push_registry_seed_images() {
 
 prepare_deployer_image() {
   [[ "${ENABLE_DEPLOYER:-0}" == "1" ]] || return 0
-  local deployer_image="${DEPLOYER_IMAGE:-}"
-  [ -n "$deployer_image" ] || die "ENABLE_DEPLOYER=1 requires DEPLOYER_IMAGE (pre-built image from Docker Hub or GHCR). Build via https://github.com/commercedeployer/deployer CI, then set e.g. commercedeployer/deployer:latest"
+  local deployer_image="${DEPLOYER_IMAGE:-commercedeployer/deployer:latest}"
 
   step "Deployer: pull image $deployer_image"
   local retries="${REGISTRY_OPERATION_RETRIES:-3}"
@@ -1573,6 +1645,10 @@ validate_enable_flags() {
   fi
   [[ "${ENABLE_MONGO_EXPRESS:-0}" != "1" ]] || [[ "${ENABLE_MONGO:-0}" == "1" ]] || die "ENABLE_MONGO_EXPRESS=1 requires ENABLE_MONGO=1"
   [[ "${ENABLE_PGADMIN:-0}" != "1" ]] || [[ "${ENABLE_POSTGRES:-0}" == "1" ]] || die "ENABLE_PGADMIN=1 requires ENABLE_POSTGRES=1"
+  # MariaDB/MySQL create an app user only with a database to grant on; a user
+  # without a database would have no privileges, so require them together.
+  [[ -z "${MARIADB_USER:-}" ]] || [[ -n "${MARIADB_DATABASE:-}" ]] || die "MARIADB_USER set without MARIADB_DATABASE — set MARIADB_DATABASE too, or leave both empty for root-only."
+  [[ -z "${MYSQL_USER:-}" ]] || [[ -n "${MYSQL_DATABASE:-}" ]] || die "MYSQL_USER set without MYSQL_DATABASE — set MYSQL_DATABASE too, or leave both empty for root-only."
   if [[ "${ENABLE_ADMINER:-0}" == "1" ]]; then
     [[ "${ENABLE_MONGO:-0}" == "1" ]] \
       || [[ "${ENABLE_POSTGRES:-0}" == "1" ]] \
@@ -1587,8 +1663,6 @@ validate_enable_flags() {
     [[ "$nginx_host" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] \
       || die "NGINX_HOST looks invalid ($nginx_host) — expected an FQDN like company.com or www.company.com."
   fi
-  [[ "${ENABLE_DEPLOYER:-0}" != "1" ]] || [ -n "${DEPLOYER_IMAGE:-}" ] \
-    || die "ENABLE_DEPLOYER=1 requires DEPLOYER_IMAGE (pre-built image URL, e.g. commercedeployer/deployer:latest)."
   if [[ "${ENABLE_DEPLOYER:-0}" == "1" ]]; then
     resolve_deployer_auth_mode >/dev/null \
       || die "DEPLOYER_AUTH_MODE must be one of: dual, api, ui."
@@ -1634,8 +1708,8 @@ setup_unattended() {
   step "unattended-upgrades"
   local retries="${REGISTRY_OPERATION_RETRIES:-3}"
   ensure_dns_ready
-  retry_run "$retries" apt-get update -o APT::Update::Error-Mode=any -qq
-  retry_run "$retries" env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unattended-upgrades
+  retry_run "$retries" apt-get -o DPkg::Lock::Timeout=300 update -o APT::Update::Error-Mode=any -qq
+  retry_run "$retries" env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq unattended-upgrades
   RUN dpkg-reconfigure -f noninteractive -plow unattended-upgrades || true
   info "Unattended security upgrades enabled."
 }
@@ -1726,8 +1800,8 @@ setup_fail2ban() {
   if command -v apt-get >/dev/null 2>&1; then
     local retries="${REGISTRY_OPERATION_RETRIES:-3}"
     ensure_dns_ready
-    retry_run "$retries" apt-get update -o APT::Update::Error-Mode=any -qq
-    retry_run "$retries" env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban
+    retry_run "$retries" apt-get -o DPkg::Lock::Timeout=300 update -o APT::Update::Error-Mode=any -qq
+    retry_run "$retries" env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq fail2ban
     cat <<EOF | RUN tee /etc/fail2ban/jail.d/setup-server-stack.local >/dev/null
 [sshd]
 enabled = true
@@ -1762,8 +1836,8 @@ setup_ufw() {
   if ! command -v ufw &>/dev/null; then
     local retries="${REGISTRY_OPERATION_RETRIES:-3}"
     ensure_dns_ready
-    retry_run "$retries" apt-get update -o APT::Update::Error-Mode=any -qq
-    retry_run "$retries" env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw
+    retry_run "$retries" apt-get -o DPkg::Lock::Timeout=300 update -o APT::Update::Error-Mode=any -qq
+    retry_run "$retries" env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq ufw
   fi
   if ufw_apply_rules; then
     info "UFW: ports ${ssh_port}, 80, 443."
@@ -1774,7 +1848,7 @@ setup_ufw() {
   if ! [ -x /usr/sbin/iptables-legacy ] && command -v apt-get &>/dev/null; then
     local retries="${REGISTRY_OPERATION_RETRIES:-3}"
     ensure_dns_ready
-    retry_run "$retries" env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iptables 2>/dev/null || true
+    retry_run "$retries" env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq iptables 2>/dev/null || true
   fi
   if command -v update-alternatives &>/dev/null; then
     if [ -x /usr/sbin/iptables-legacy ]; then
@@ -2055,7 +2129,7 @@ print_urls() {
   [[ "${ENABLE_DOKU:-0}" == "1" ]] && echo "  Doku:        https://doku.${d}"
   [[ "${ENABLE_DUPLICATI:-0}" == "1" ]] && echo "  Duplicati:   https://duplicati.${d}"
   [[ "${ENABLE_UPTIME_KUMA:-0}" == "1" ]] && echo "  Kuma:        https://kuma.${d}"
-  [[ "${ENABLE_FILEBROWSER:-0}" == "1" ]] && echo "  Filebrowser: https://filebrowser.${d}  (rw: ${FILEBROWSER_ROOT_PATH:-$STACK_ROOT/filebrowser/files}; login ${FILEBROWSER_USER:-${STACK_ADMIN_USER:-admin}}, password in FILEBROWSER_PASSWORD)"
+  [[ "${ENABLE_FILEBROWSER:-0}" == "1" ]] && echo "  Filebrowser: https://filebrowser.${d}  (rw: ${FILEBROWSER_ROOT_PATH:-/opt}; login ${FILEBROWSER_USER:-${STACK_ADMIN_USER:-admin}}, password in FILEBROWSER_PASSWORD)"
   [[ "${ENABLE_NGINX:-0}" == "1" ]] && echo "  NGINX site:  https://$(resolve_nginx_host)  (files: $(resolve_nginx_public_path))"
   [[ "${ENABLE_DEPLOYER:-0}" == "1" ]] && echo "  Deployer:    https://deployer.${d}"
   [[ "${ENABLE_MONGO_EXPRESS:-0}" == "1" ]] && echo "  mongo-express: https://mongo-express.${d}"

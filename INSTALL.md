@@ -167,7 +167,7 @@ ENABLE_NGINX=1
 # NGINX_HOST=www.example.com  # optional; empty = DOMAIN
 ```
 
-Runtime files always live in `${STACK_ROOT}/nginx/public/`. On first install only, when that runtime folder is empty, the installer copies the seed contents from `setup-server-stack/public/`. On every re-run, if the folder already contains any file, the installer keeps the existing site and does not overwrite it.
+Runtime files always live in `${STACK_ROOT}/nginx/public/`. The repo ships a default page in `setup-server-stack/nginx/public/`; on first install only, when the runtime folder is empty, it is used as the seed. On every re-run, if the folder already contains any file, the installer keeps the existing site and does not overwrite it.
 
 ### Step 4. Run the installer
 
@@ -183,7 +183,7 @@ On first run the script:
 - generates random passwords → **`.secrets`**;
 - builds Traefik htpasswd (dashboard + Doku);
 - generates JWT keys and **`auth_config.yml`**;
-- initializes `$STACK_ROOT/nginx/public` from `public/` only when `ENABLE_NGINX=1` and the runtime folder is empty;
+- initializes `$STACK_ROOT/nginx/public` from `nginx/public/` only when `ENABLE_NGINX=1` and the runtime folder is empty;
 - writes **`$STACK_ROOT/.env.stack`** (chmod 600);
 - runs **`docker compose --env-file .env.stack up -d`**;
 - checks TLS certificates per enabled HTTPS host and prints clear `TLS OK` / `TLS WARN` lines.
@@ -313,7 +313,7 @@ docker compose --env-file .env.stack -f docker-compose.yml up -d
 docker compose --env-file .env.stack -f docker-compose.yml down
 ```
 
-(Volumes remain unless `-v`.)
+(Data is safe: it lives in `${STACK_ROOT}/<service>` bind mounts, so `down` — even with `-v` — does not delete it.)
 
 ### Push an image to your registry
 
@@ -368,7 +368,7 @@ Pull policy inside Deployer (for app images): `DEPLOYER_DEFAULT_PULL_POLICY=alwa
 
 ### Duplicati (backups)
 
-The stack starts the **Duplicati web UI** and stores its settings in the Docker volume `duplicati_config`. It does **not** configure backup jobs for you:
+The stack starts the **Duplicati web UI** and stores its settings in `${STACK_ROOT}/duplicati`. It does **not** configure backup jobs for you:
 
 - **Sources** — which files or volumes to back up
 - **Destination** — S3, Backblaze, SFTP, another server, etc.
@@ -376,7 +376,7 @@ The stack starts the **Duplicati web UI** and stores its settings in the Docker 
 
 After install, open `https://duplicati.${DOMAIN}`, log in with `DUPLICATI_WEBSERVICE_PASSWORD` from secrets, then create a backup job in the UI.
 
-By default Duplicati only sees its own `/config` inside the container. To back up stack data (e.g. `${STACK_ROOT}`, Docker named volumes), add **read-only** bind mounts to the `duplicati` service in `docker-compose.yml` (examples are commented there), then `docker compose ... up -d`. Paths must be readable by `DUP_PUID` / `DUP_PGID` (default `1000`).
+By default Duplicati only sees its own `/config` inside the container. Since all stack data lives under `${STACK_ROOT}`, add a single **read-only** bind mount of `${STACK_ROOT}` to the `duplicati` service in `docker-compose.yml` (an example is commented there), then `docker compose ... up -d`. Paths must be readable by `DUP_PUID` / `DUP_PGID` (default `1000`).
 
 ### Validate compose config
 
@@ -434,7 +434,10 @@ Already issued certificates stay in `${STACK_ROOT}/traefik/acme.json`; do not ru
 | `${STACK_ROOT}/nginx/public/` | Static site files served by NGINX when `ENABLE_NGINX=1` |
 | `${STACK_ROOT}/config/traefik/htpasswd*` | Basic Auth for Traefik / Doku |
 | `${STACK_ROOT}/config/pgadmin/` | pgAdmin auto-connect (if enabled) |
+| `${STACK_ROOT}/<service>/` | Per-service persistent data (bind mounts): `registry`, `portainer`, `semaphore`, `duplicati`, `kuma`, `pgadmin`, `postgres`, `mongo`, `mariadb`, `mysql` |
 
-**Watchtower** skips Traefik and databases. **Duplicati** — only the UI + `duplicati_config` volume from compose; sources, destination, and schedule are set in the Duplicati UI (§8).
+All persistent state lives under `${STACK_ROOT}` as bind mounts (no Docker named volumes), so a single copy of `${STACK_ROOT}` is a full backup of the stack. The installer creates each `${STACK_ROOT}/<service>` only for enabled services and sets ownership where needed (pgAdmin `5050:5050`, Semaphore `1001:0`). To relocate one service's data (e.g. a database onto a separate disk), set `<SERVICE>_DATA_PATH` in `.env` (see `.env.example` section `[M]`); a path outside `${STACK_ROOT}` still works and is left untouched by the Windows deploy (it only writes inside `${STACK_ROOT}`), but it is not included when you back up by copying `${STACK_ROOT}` — back such a path up separately.
+
+**Watchtower** skips Traefik and databases. **Duplicati** — only the UI + its `${STACK_ROOT}/duplicati` data from compose; sources, destination, and schedule are set in the Duplicati UI (§8).
 
 **Acceptance checklist:** DNS → HTTPS on panels → `docker login registry.${DOMAIN}` → DB ports not on `0.0.0.0` → re-run installer does not break `acme.json` without `--force-secrets`.

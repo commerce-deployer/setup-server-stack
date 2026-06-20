@@ -2,6 +2,17 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+
+- Optional per-service data path overrides `<SERVICE>_DATA_PATH` (e.g. `POSTGRES_DATA_PATH`), default `$STACK_ROOT/<service>`, to relocate a single service's data (e.g. a database onto a separate disk). Documented as an advanced block in `.env.example`.
+
+### Changed
+
+- All persistent data moved from Docker named volumes to bind mounts under `$STACK_ROOT/<service>` (`registry`, `portainer`, `semaphore`, `duplicati`, `kuma`, `pgadmin`, `postgres`, `mongo`, `mariadb`, `mysql`), so one copy of `$STACK_ROOT` is a full backup. The installer creates each directory only for enabled services and sets ownership where required (pgAdmin `5050:5050`, Semaphore `1001:0`); Windows deploy preserves them across redeploys.
+- NGINX seed page moved from the top-level `public/` to `nginx/public/` so there is a single, clearly named site folder.
+
 ## [1.1.0] — 2026-06-20
 
 ### Added
